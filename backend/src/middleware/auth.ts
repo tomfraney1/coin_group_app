@@ -1,0 +1,38 @@
+import { Request, Response, NextFunction, RequestHandler } from 'express';
+import jwt from 'jsonwebtoken';
+
+// Extend the Express Request type to include user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        userId: string;
+        role: string;
+      };
+    }
+  }
+}
+
+export const authenticateToken: RequestHandler = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    console.error('No token provided in request');
+    res.status(401).json({ message: 'Authentication token required' });
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+    console.log('Decoded token:', { userId: decoded.userId, role: decoded.role });
+    req.user = {
+      userId: decoded.userId,
+      role: decoded.role
+    };
+    next();
+  } catch (error) {
+    console.error('Token verification failed:', error);
+    res.status(403).json({ message: 'Invalid token' });
+  }
+}; 

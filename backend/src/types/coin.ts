@@ -1,0 +1,1 @@
+export type CoinLocation = 'UCB' | '1NAT' | 'AMER' | 'FID' | 'WMP'; 
