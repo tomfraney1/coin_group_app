@@ -3,6 +3,8 @@ export interface CaseCoin {
   barcode: string;
   name: string;
   quantity: number;
+  description?: string;
+  grade?: string;
 }
 
 export interface CaseHistory {

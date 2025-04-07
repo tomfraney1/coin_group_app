@@ -35,10 +35,11 @@ import {
   AlertDialogContent,
   AlertDialogOverlay,
 } from '@chakra-ui/react';
-import { AddIcon, DeleteIcon, EditIcon, ViewIcon } from '@chakra-ui/icons';
+import { AddIcon, DeleteIcon, EditIcon, ViewIcon, DownloadIcon } from '@chakra-ui/icons';
 import { Case, CaseCoin } from '../types/case';
 import { caseService } from '../services/caseService';
 import { useNavigate } from 'react-router-dom';
+import { enrichCoin } from '../utils/coinEnrichment';
 
 const CaseManagement: React.FC = () => {
   const [cases, setCases] = useState<Case[]>([]);
@@ -110,21 +111,67 @@ const CaseManagement: React.FC = () => {
     return status === 'open' ? 'green' : 'red';
   };
 
+  const handleExportCSV = async () => {
+    // Create CSV content
+    const headers = ['Barcode', 'Coin ID', 'Product Name', 'Description', 'Grade', 'Case Number'];
+    
+    // Process all coins and get their enriched data
+    const rows = await Promise.all(cases.flatMap(async case_ => 
+      await Promise.all(case_.coins.map(async coin => {
+        const enrichedData = await enrichCoin(coin.barcode);
+        return [
+          coin.barcode,
+          coin.id,
+          coin.name,
+          enrichedData?.description || '',
+          enrichedData?.grade || '',
+          case_.caseNumber
+        ];
+      }))
+    ));
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.flat().map(row => row.join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'case-management-export.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <Box>
       <VStack spacing={6} align="stretch">
         <HStack justify="space-between">
           <Heading size="lg" color="orange.500">Case Management</Heading>
-          <Button
-            leftIcon={<AddIcon />}
-            colorScheme="orange"
-            onClick={() => {
-              setNewCaseNumber('');
-              onOpen();
-            }}
-          >
-            Create New Case
-          </Button>
+          <HStack>
+            <Button
+              leftIcon={<DownloadIcon />}
+              colorScheme="blue"
+              onClick={handleExportCSV}
+              isDisabled={cases.length === 0}
+            >
+              Export CSV
+            </Button>
+            <Button
+              leftIcon={<AddIcon />}
+              colorScheme="orange"
+              onClick={() => {
+                setNewCaseNumber('');
+                onOpen();
+              }}
+            >
+              Create New Case
+            </Button>
+          </HStack>
         </HStack>
 
         <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={6}>
