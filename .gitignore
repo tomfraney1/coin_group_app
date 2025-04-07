@@ -1,10 +1,68 @@
 # Dependencies
 node_modules/
-frontend/node_modules/
-backend/node_modules/
+**/node_modules/
+package-lock.json
+**/package-lock.json
 
 # Environment files
 .env
+.env.local
+.env.development
+.env.test
+.env.production
+**/.env*
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Database files
+*.sqlite
+*.db
+
+# Cloud configuration
+cloud_sql_proxy
+**/cloudbuild.yaml
+**/apprunner-config.json
+**/task-definition.json
+**/rds-*.json
+**/secrets*.json
+
+# Temporary files
+*.tmp
+*.temp
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files
 .env.*
 !.env.example
 
@@ -40,11 +98,6 @@ Thumbs.db
 
 # Testing
 /coverage
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # Editor directories and files
 .idea/
