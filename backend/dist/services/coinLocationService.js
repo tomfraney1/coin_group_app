@@ -1,72 +1,65 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.coinLocationService = void 0;
+const db_1 = require("../utils/db");
 class CoinLocationService {
-    constructor() {
-        this.locationHistory = [];
+    async assignCoinToLocation(coinId, location, userId) {
+        await (0, db_1.query)(`INSERT INTO coin_locations (coin_id, location, user_id, timestamp)
+       VALUES ($1, $2, $3, $4)`, [coinId, location, userId, new Date()]);
     }
-    assignCoinToLocation(coinId, location, userId) {
-        return __awaiter(this, void 0, void 0, function* () {
-            this.locationHistory.push({
-                coinId,
-                location,
-                userId,
-                timestamp: new Date()
-            });
-        });
+    async getCoinLocation(coinId) {
+        var _a;
+        const result = await (0, db_1.query)(`SELECT location
+       FROM coin_locations
+       WHERE coin_id = $1
+       ORDER BY timestamp DESC
+       LIMIT 1`, [coinId]);
+        return ((_a = result.rows[0]) === null || _a === void 0 ? void 0 : _a.location) || null;
     }
-    getCoinLocation(coinId) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const latestHistory = this.locationHistory
-                .filter(h => h.coinId === coinId)
-                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
-            return (latestHistory === null || latestHistory === void 0 ? void 0 : latestHistory.location) || null;
-        });
+    async getLocationHistory(coinId) {
+        const result = await (0, db_1.query)(`SELECT id, coin_id as "coinId", location, user_id as "userId", timestamp
+       FROM coin_locations
+       WHERE coin_id = $1
+       ORDER BY timestamp DESC`, [coinId]);
+        return result.rows;
     }
-    getLocationHistory(coinId) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.locationHistory
-                .filter(h => h.coinId === coinId)
-                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    async getLocationCounts() {
+        const result = await (0, db_1.query)(`WITH latest_locations AS (
+         SELECT DISTINCT ON (coin_id)
+           coin_id,
+           location
+         FROM coin_locations
+         ORDER BY coin_id, timestamp DESC
+       )
+       SELECT 
+         location,
+         COUNT(*) as count
+       FROM latest_locations
+       GROUP BY location`);
+        const counts = {
+            UCB: 0,
+            '1NAT': 0,
+            AMER: 0,
+            FID: 0,
+            WMP: 0
+        };
+        result.rows.forEach(row => {
+            counts[row.location] = parseInt(row.count);
         });
+        return counts;
     }
-    getLocationCounts() {
-        return __awaiter(this, void 0, void 0, function* () {
-            const counts = {
-                UCB: 0,
-                '1NAT': 0,
-                AMER: 0,
-                FID: 0,
-                WMP: 0
-            };
-            this.locationHistory.forEach(h => {
-                counts[h.location]++;
-            });
-            return counts;
-        });
-    }
-    getCoinsByLocation(location) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const latestHistory = new Map();
-            this.locationHistory.forEach(h => {
-                if (!latestHistory.has(h.coinId) ||
-                    h.timestamp > latestHistory.get(h.coinId).timestamp) {
-                    latestHistory.set(h.coinId, h);
-                }
-            });
-            return Array.from(latestHistory.values())
-                .filter(h => h.location === location)
-                .map(h => h.coinId);
-        });
+    async getCoinsByLocation(location) {
+        const result = await (0, db_1.query)(`WITH latest_locations AS (
+         SELECT DISTINCT ON (coin_id)
+           coin_id,
+           location
+         FROM coin_locations
+         ORDER BY coin_id, timestamp DESC
+       )
+       SELECT coin_id
+       FROM latest_locations
+       WHERE location = $1`, [location]);
+        return result.rows.map(row => row.coin_id);
     }
 }
 exports.coinLocationService = new CoinLocationService();

@@ -6,8 +6,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.authenticateToken = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const authenticateToken = (req, res, next) => {
+    console.log('Auth middleware - Request headers:', req.headers);
     const authHeader = req.headers['authorization'];
+    console.log('Auth header:', authHeader);
     const token = authHeader && authHeader.split(' ')[1];
+    console.log('Extracted token:', token ? 'Token present' : 'No token');
     if (!token) {
         console.error('No token provided in request');
         res.status(401).json({ message: 'Authentication token required' });

@@ -1,4 +1,16 @@
-import { Case, CaseCoin, CaseHistory, StockTakeResult, StockTakeReport } from '../types/case';
+import { Case as CaseType, CaseCoin, CaseHistory, StockTakeResult, StockTakeReport } from '../types/case';
+import { v4 as uuidv4 } from 'uuid';
+
+interface CaseHistoryEntry {
+  timestamp: string;
+  action: 'created' | 'closed' | 'opened' | 'coin_added' | 'coin_removed' | 'coin_moved' | 'coin_updated';
+  userId: string;
+  details: string;
+}
+
+export interface Case extends CaseType {
+  history: CaseHistoryEntry[];
+}
 
 class CaseService {
   private cases: Case[] = [];
@@ -48,7 +60,7 @@ class CaseService {
 
   createCase(caseNumber: string, createdBy: string): Case {
     const newCase: Case = {
-      id: Date.now().toString(),
+      id: uuidv4(),
       caseNumber,
       status: 'open',
       createdAt: new Date().toISOString(),
@@ -229,6 +241,26 @@ class CaseService {
 
   getStockTakeReports(): StockTakeReport[] {
     return this.stockTakeReports;
+  }
+
+  updateCoinInCase(caseId: string, coin: CaseCoin, userId: string): Case | null {
+    const cases = this.cases.find(c => c.id === caseId);
+    if (!cases) return null;
+
+    const coinIndex = cases.coins.findIndex(c => c.barcode === coin.barcode);
+    if (coinIndex === -1) return null;
+
+    cases.coins[coinIndex] = coin;
+    this.saveData();
+
+    cases.history.push({
+      timestamp: new Date().toISOString(),
+      action: 'coin_updated' as CaseHistory['action'],
+      userId,
+      details: `Updated coin ${coin.id} (${coin.name}) with barcode ${coin.barcode}`
+    });
+
+    return cases;
   }
 }
 

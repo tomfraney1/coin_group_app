@@ -8,7 +8,6 @@ interface User {
 }
 
 interface AuthResponse {
-  message: string;
   token: string;
   user: User;
 }
@@ -33,29 +32,19 @@ class AuthService {
   }
 
   public async register(username: string, email: string, password: string): Promise<AuthResponse> {
-    const response = await apiService.post<AuthResponse>('/auth/register', {
-      username,
-      email,
-      password,
-    });
-
+    const response = await apiService.register(email, password, username);
     this.handleAuthSuccess(response);
     return response;
   }
 
   public async login(email: string, password: string): Promise<AuthResponse> {
-    const response = await apiService.post<AuthResponse>('/auth/login', {
-      email,
-      password,
-    });
-
+    const response = await apiService.login(email, password);
     this.handleAuthSuccess(response);
     return response;
   }
 
   private handleAuthSuccess(response: AuthResponse) {
     this.currentUser = response.user;
-    apiService.setToken(response.token);
     localStorage.setItem('user', JSON.stringify(response.user));
   }
 

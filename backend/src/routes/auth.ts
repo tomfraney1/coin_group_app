@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User';
+import { User, IUser } from '../models/User';
+import bcrypt from 'bcryptjs';
 
 const router = express.Router();
 
@@ -13,21 +14,21 @@ router.post('/register', (async (req: Request, res: Response) => {
     const { username, email, password, role } = req.body;
 
     // Check if user already exists
-    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    const existingUser = await User.findByEmail(email);
     if (existingUser) {
       res.status(400).json({ message: 'User already exists' });
       return;
     }
 
     // Create new user
-    const user = new User({
+    const user = await User.create({
       username,
       email,
       password,
       role: role || 'user',
+      isActive: true,
+      lastLogin: new Date()
     });
-
-    await user.save();
 
     // Generate JWT token
     const JWT_SECRET = process.env.JWT_SECRET;
@@ -36,7 +37,7 @@ router.post('/register', (async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, role: user.role },
+      { userId: user.id, role: user.role },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -45,13 +46,14 @@ router.post('/register', (async (req: Request, res: Response) => {
       message: 'User created successfully',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         username: user.username,
         email: user.email,
         role: user.role,
       },
     });
   } catch (error) {
+    console.error('Error creating user:', error);
     res.status(500).json({ message: 'Error creating user', error });
   }
 }) as RequestHandler);
@@ -60,24 +62,33 @@ router.post('/register', (async (req: Request, res: Response) => {
 router.post('/login', (async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
+    console.log('Login attempt for email:', email);
 
     // Find user
-    const user = await User.findOne({ email });
+    const user = await User.findByEmail(email);
     if (!user) {
+      console.log('User not found:', email);
       res.status(401).json({ message: 'Invalid credentials' });
       return;
     }
+    console.log('User found, comparing passwords');
 
     // Check password
-    const isMatch = await user.comparePassword(password);
+    const isMatch = await bcrypt.compare(password, user.password);
+    console.log('Password comparison result:', isMatch);
+    console.log('Stored hash:', user.password);
+    console.log('Provided password:', password);
+
     if (!isMatch) {
+      console.log('Password mismatch');
       res.status(401).json({ message: 'Invalid credentials' });
       return;
     }
 
     // Update last login
-    user.lastLogin = new Date();
-    await user.save();
+    if (user.id) {
+      await User.update(user.id, { lastLogin: new Date() });
+    }
 
     // Generate JWT token
     const JWT_SECRET = process.env.JWT_SECRET;
@@ -86,7 +97,7 @@ router.post('/login', (async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, role: user.role },
+      { userId: user.id, role: user.role },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -94,13 +105,14 @@ router.post('/login', (async (req: Request, res: Response) => {
     res.json({
       token,
       user: {
-        id: user._id,
+        id: user.id,
         username: user.username,
         email: user.email,
         role: user.role,
       },
     });
   } catch (error) {
+    console.error('Error logging in:', error);
     res.status(500).json({ message: 'Error logging in', error });
   }
 }) as RequestHandler);
@@ -126,15 +138,18 @@ router.get('/me', (async (req: Request, res: Response) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-    const user = await User.findById(decoded.userId).select('-password');
+    const user = await User.findById(decoded.userId);
 
     if (!user) {
       res.status(404).json({ message: 'User not found' });
       return;
     }
 
-    res.json(user);
+    // Remove password from response
+    const { password: _, ...userWithoutPassword } = user;
+    res.json(userWithoutPassword);
   } catch (error) {
+    console.error('Error in /me route:', error);
     res.status(401).json({ message: 'Invalid token' });
   }
 }) as RequestHandler);

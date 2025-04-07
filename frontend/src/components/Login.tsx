@@ -15,6 +15,7 @@ import {
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { authService } from '../services/auth';
+import { isDevelopment, developmentUser } from '../config';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -29,6 +30,14 @@ const Login = () => {
     setIsLoading(true);
 
     try {
+      if (isDevelopment) {
+        // In development mode, use the development user
+        localStorage.setItem('user', JSON.stringify(developmentUser));
+        localStorage.setItem('token', 'development-token');
+        window.location.href = '/';
+        return;
+      }
+
       const response = await authService.login(email, password);
       
       // Force a page reload to update the user state

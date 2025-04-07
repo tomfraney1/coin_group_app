@@ -1,13 +1,20 @@
-FROM --platform=linux/amd64 node:18-alpine
-
+# Build stage
+FROM node:18-alpine as build
 WORKDIR /app
-
 COPY package*.json ./
 RUN npm install
-
 COPY . .
 RUN npm run build
 
-EXPOSE 3000
+# Production stage
+FROM node:18-alpine
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY package*.json ./
+RUN npm install --production
 
-CMD ["npm", "start"] 
+# Set default port
+ENV PORT=8080
+
+EXPOSE ${PORT}
+CMD ["node", "dist/server.js"] 

@@ -1,0 +1,26 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "rds:StartExportTask",
+                "rds:DescribeExportTasks",
+                "rds:CancelExportTask"
+            ],
+            "Resource": "arn:aws:rds:us-east-1:339713151917:db:coingroup-db"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::coingroup-db-export-1743988087",
+                "arn:aws:s3:::coingroup-db-export-1743988087/*"
+            ]
+        }
+    ]
+} 

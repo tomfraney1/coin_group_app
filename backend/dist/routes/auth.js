@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -15,38 +6,40 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const router = express_1.default.Router();
 // Development token check
 const isDevelopmentToken = (token) => token === 'development-token';
 // Register new user
-router.post('/register', ((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post('/register', (async (req, res) => {
     try {
         const { username, email, password, role } = req.body;
         // Check if user already exists
-        const existingUser = yield User_1.User.findOne({ $or: [{ email }, { username }] });
+        const existingUser = await User_1.User.findByEmail(email);
         if (existingUser) {
             res.status(400).json({ message: 'User already exists' });
             return;
         }
         // Create new user
-        const user = new User_1.User({
+        const user = await User_1.User.create({
             username,
             email,
             password,
             role: role || 'user',
+            isActive: true,
+            lastLogin: new Date()
         });
-        yield user.save();
         // Generate JWT token
         const JWT_SECRET = process.env.JWT_SECRET;
         if (!JWT_SECRET) {
             throw new Error('JWT_SECRET environment variable is not set');
         }
-        const token = jsonwebtoken_1.default.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+        const token = jsonwebtoken_1.default.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
         res.status(201).json({
             message: 'User created successfully',
             token,
             user: {
-                id: user._id,
+                id: user.id,
                 username: user.username,
                 email: user.email,
                 role: user.role,
@@ -54,38 +47,47 @@ router.post('/register', ((req, res) => __awaiter(void 0, void 0, void 0, functi
         });
     }
     catch (error) {
+        console.error('Error creating user:', error);
         res.status(500).json({ message: 'Error creating user', error });
     }
-})));
+}));
 // Login user
-router.post('/login', ((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post('/login', (async (req, res) => {
     try {
         const { email, password } = req.body;
+        console.log('Login attempt for email:', email);
         // Find user
-        const user = yield User_1.User.findOne({ email });
+        const user = await User_1.User.findByEmail(email);
         if (!user) {
+            console.log('User not found:', email);
             res.status(401).json({ message: 'Invalid credentials' });
             return;
         }
+        console.log('User found, comparing passwords');
         // Check password
-        const isMatch = yield user.comparePassword(password);
+        const isMatch = await bcryptjs_1.default.compare(password, user.password);
+        console.log('Password comparison result:', isMatch);
+        console.log('Stored hash:', user.password);
+        console.log('Provided password:', password);
         if (!isMatch) {
+            console.log('Password mismatch');
             res.status(401).json({ message: 'Invalid credentials' });
             return;
         }
         // Update last login
-        user.lastLogin = new Date();
-        yield user.save();
+        if (user.id) {
+            await User_1.User.update(user.id, { lastLogin: new Date() });
+        }
         // Generate JWT token
         const JWT_SECRET = process.env.JWT_SECRET;
         if (!JWT_SECRET) {
             throw new Error('JWT_SECRET environment variable is not set');
         }
-        const token = jsonwebtoken_1.default.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+        const token = jsonwebtoken_1.default.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
         res.json({
             token,
             user: {
-                id: user._id,
+                id: user.id,
                 username: user.username,
                 email: user.email,
                 role: user.role,
@@ -93,11 +95,12 @@ router.post('/login', ((req, res) => __awaiter(void 0, void 0, void 0, function*
         });
     }
     catch (error) {
+        console.error('Error logging in:', error);
         res.status(500).json({ message: 'Error logging in', error });
     }
-})));
+}));
 // Get current user
-router.get('/me', ((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.get('/me', (async (req, res) => {
     var _a;
     try {
         const token = (_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.split(' ')[1];
@@ -116,15 +119,18 @@ router.get('/me', ((req, res) => __awaiter(void 0, void 0, void 0, function* () 
             return;
         }
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-        const user = yield User_1.User.findById(decoded.userId).select('-password');
+        const user = await User_1.User.findById(decoded.userId);
         if (!user) {
             res.status(404).json({ message: 'User not found' });
             return;
         }
-        res.json(user);
+        // Remove password from response
+        const { password: _, ...userWithoutPassword } = user;
+        res.json(userWithoutPassword);
     }
     catch (error) {
+        console.error('Error in /me route:', error);
         res.status(401).json({ message: 'Invalid token' });
     }
-})));
+}));
 exports.default = router;

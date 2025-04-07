@@ -7,7 +7,7 @@ export interface CaseCoin {
 
 export interface CaseHistory {
   timestamp: string;
-  action: 'created' | 'opened' | 'closed' | 'coin_added' | 'coin_removed' | 'coin_moved';
+  action: 'created' | 'closed' | 'opened' | 'coin_added' | 'coin_removed' | 'coin_moved' | 'coin_updated';
   userId: string;
   details: string;
 }

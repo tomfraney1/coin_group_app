@@ -1,0 +1,41 @@
+{
+    "ServiceName": "coin-group-backend-v35",
+    "SourceConfiguration": {
+        "ImageRepository": {
+            "ImageIdentifier": "339713151917.dkr.ecr.us-east-1.amazonaws.com/coin-group-backend:v34",
+            "ImageConfiguration": {
+                "Port": "3000",
+                "StartCommand": "npm start",
+                "RuntimeEnvironmentVariables": {
+                    "NODE_ENV": "production",
+                    "PORT": "3000",
+                    "DATABASE_URL": "postgresql://postgres:postgres@coingroup-db.cxqyqyqyqyqyq.us-east-1.rds.amazonaws.com:5432/coingroup",
+                    "JWT_SECRET": "coingroup-secret-key-2024",
+                    "CORS_ORIGIN": "https://coingroup-frontend.s3-website-us-east-1.amazonaws.com",
+                    "API_URL": "https://dwf9z4d4fmxdn.cloudfront.net/api",
+                    "FRONTEND_URL": "https://dwf9z4d4fmxdn.cloudfront.net",
+                    "AWS_REGION": "us-east-1",
+                    "LOG_LEVEL": "info"
+                }
+            },
+            "ImageRepositoryType": "ECR"
+        },
+        "AutoDeploymentsEnabled": true,
+        "AuthenticationConfiguration": {
+            "AccessRoleArn": "arn:aws:iam::339713151917:role/AppRunnerECRAccessRole"
+        }
+    },
+    "InstanceConfiguration": {
+        "Cpu": "1 vCPU",
+        "Memory": "2 GB",
+        "InstanceRoleArn": "arn:aws:iam::339713151917:role/AppRunnerServiceRole"
+    },
+    "HealthCheckConfiguration": {
+        "Protocol": "HTTP",
+        "Path": "/api/health",
+        "Interval": 20,
+        "Timeout": 10,
+        "HealthyThreshold": 2,
+        "UnhealthyThreshold": 5
+    }
+} 

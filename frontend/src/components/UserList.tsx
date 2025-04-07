@@ -14,7 +14,7 @@ import {
   Heading,
 } from '@chakra-ui/react';
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { apiService } from '../services/api';
 
 interface User {
   _id: string;
@@ -37,15 +37,12 @@ const UserList = () => {
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:3001/api/users', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUsers(response.data);
+      const response = await apiService.request<{ users: User[] }>('/users');
+      setUsers(response.users);
     } catch (error: any) {
       toast({
         title: 'Error fetching users',
-        description: error.response?.data?.message || 'An error occurred',
+        description: error.message || 'An error occurred',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -57,12 +54,10 @@ const UserList = () => {
 
   const handleToggleActive = async (userId: string, currentStatus: boolean) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.patch(
-        `http://localhost:3001/api/users/${userId}/toggle-active`,
-        { isActive: !currentStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await apiService.request(`/users/${userId}/toggle-active`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !currentStatus }),
+      });
       
       setUsers(users.map(user => 
         user._id === userId 
@@ -79,7 +74,7 @@ const UserList = () => {
     } catch (error: any) {
       toast({
         title: 'Error updating user',
-        description: error.response?.data?.message || 'An error occurred',
+        description: error.message || 'An error occurred',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -89,12 +84,10 @@ const UserList = () => {
 
   const handleUpdateRole = async (userId: string, newRole: string) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.patch(
-        `http://localhost:3001/api/users/${userId}/role`,
-        { role: newRole },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await apiService.request(`/users/${userId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: newRole }),
+      });
       
       setUsers(users.map(user => 
         user._id === userId 
@@ -111,7 +104,7 @@ const UserList = () => {
     } catch (error: any) {
       toast({
         title: 'Error updating user role',
-        description: error.response?.data?.message || 'An error occurred',
+        description: error.message || 'An error occurred',
         status: 'error',
         duration: 3000,
         isClosable: true,

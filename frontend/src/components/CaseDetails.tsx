@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Button,
@@ -33,8 +33,14 @@ import {
   AlertDialogHeader,
   AlertDialogContent,
   AlertDialogOverlay,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  Flex,
 } from '@chakra-ui/react';
-import { DeleteIcon, ArrowUpIcon, ArrowDownIcon } from '@chakra-ui/icons';
+import { DeleteIcon, ArrowUpIcon, ArrowDownIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { Case, CaseCoin } from '../types/case';
 import { caseService } from '../services/caseService';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -54,90 +60,149 @@ const CaseDetails: React.FC = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
   const [quantity, setQuantity] = useState<number>(1);
+  const [coinId, setCoinId] = useState('');
+  const [description, setDescription] = useState('');
+  const [scanQueue, setScanQueue] = useState<{ barcode: string; quantity: number }[]>([]);
+  const [processingQueue, setProcessingQueue] = useState(false);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const [tempCoins, setTempCoins] = useState<{ [key: string]: CaseCoin }>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
   useEffect(() => {
-    if (!caseId) return;
-    
-    const case_ = caseService.getCase(caseId);
-    if (!case_) {
-      toast({
-        title: 'Case not found',
-        description: 'The requested case could not be found',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-      navigate('/show-stock/case-management');
-      return;
+    if (caseId) {
+      const case_ = caseService.getCase(caseId);
+      if (case_) {
+        setCurrentCase(case_);
+      }
     }
-    setCurrentCase(case_);
-  }, [caseId, navigate, toast]);
+  }, [caseId]);
 
-  const handleScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!barcode || !currentCase) return;
+  // Process the scan queue
+  useEffect(() => {
+    const processQueue = async () => {
+      if (scanQueue.length === 0 || processingQueue) return;
 
-    setIsLoading(true);
-    try {
-      // Enrich coin data
-      const enrichedData = await enrichCoin(barcode);
-      if (!enrichedData) {
-        throw new Error('Failed to enrich coin data');
+      setProcessingQueue(true);
+      const { barcode, quantity } = scanQueue[0];
+
+      try {
+        // Add temporary coin immediately
+        const tempCoin: CaseCoin = {
+          id: 'pending',
+          barcode,
+          name: 'Loading...',
+          quantity
+        };
+
+        if (currentCase) {
+          const user = JSON.parse(localStorage.getItem('user') || '{}');
+          const updatedCase = caseService.addCoinToCase(currentCase.id, tempCoin, user.username);
+          if (updatedCase) {
+            setCurrentCase(updatedCase);
+            setTempCoins(prev => ({ ...prev, [barcode]: tempCoin }));
+          }
+        }
+
+        // Enrich coin data
+        const enrichedData = await enrichCoin(barcode);
+        if (!enrichedData || !enrichedData.coinId) {
+          throw new Error('Failed to enrich coin data');
+        }
+
+        // Update the coin with enriched data
+        const enrichedCoin: CaseCoin = {
+          id: enrichedData.coinId,
+          barcode,
+          name: enrichedData.description || `${enrichedData.year || ''} ${enrichedData.denomination || ''} ${enrichedData.grade || ''}`.trim() || 'Unknown Coin',
+          quantity
+        };
+
+        if (currentCase) {
+          const user = JSON.parse(localStorage.getItem('user') || '{}');
+          const updatedCase = caseService.updateCoinInCase(currentCase.id, enrichedCoin, user.username);
+          if (updatedCase) {
+            setCurrentCase(updatedCase);
+            setTempCoins(prev => {
+              const newTempCoins = { ...prev };
+              delete newTempCoins[barcode];
+              return newTempCoins;
+            });
+            toast({
+              title: 'Coin added',
+              description: `Added ${quantity} ${enrichedCoin.name} to case ${currentCase.caseNumber}`,
+              status: 'success',
+              duration: 2000,
+              isClosable: true,
+            });
+          }
+        }
+      } catch (error) {
+        toast({
+          title: 'Error adding coin',
+          description: error instanceof Error ? error.message : 'Failed to add coin to case',
+          status: 'error',
+          duration: 2000,
+          isClosable: true,
+        });
+        // Remove the temporary coin if enrichment failed
+        if (currentCase) {
+          const user = JSON.parse(localStorage.getItem('user') || '{}');
+          caseService.removeCoinFromCase(currentCase.id, 'pending', user.username);
+          setTempCoins(prev => {
+            const newTempCoins = { ...prev };
+            delete newTempCoins[barcode];
+            return newTempCoins;
+          });
+        }
+      } finally {
+        setScanQueue(prev => prev.slice(1));
+        setProcessingQueue(false);
       }
+    };
 
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      // Create coin object
-      const coin: CaseCoin = {
-        id: Date.now().toString(),
-        barcode,
-        name: enrichedData.description || `${enrichedData.year || ''} ${enrichedData.denomination || ''} ${enrichedData.grade || ''}`.trim() || 'Unknown Coin',
-        quantity: quantity
-      };
+    processQueue();
+  }, [scanQueue, currentCase, processingQueue]);
 
-      // Add coin to case
-      const updatedCase = caseService.addCoinToCase(currentCase.id, coin, user.username, quantity);
-      if (!updatedCase) {
-        throw new Error('Failed to add coin to case');
-      }
+  // Handle barcode input
+  const handleBarcodeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setBarcode(value);
+  };
 
-      setCurrentCase(updatedCase);
-      setBarcode('');
-      setQuantity(1); // Reset quantity after adding
-      toast({
-        title: 'Coin added',
-        description: `Added ${quantity} ${coin.name} to Case ${currentCase.caseNumber}`,
-        status: 'success',
-        duration: 2000,
-        isClosable: true,
-      });
-    } catch (error) {
-      toast({
-        title: 'Error adding coin',
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-    } finally {
-      setIsLoading(false);
+  // Handle scan submission
+  const handleScanSubmit = () => {
+    if (!currentCase || !barcode) return;
+    
+    setScanQueue(prev => [...prev, { barcode, quantity }]);
+    setBarcode('');
+    // Keep focus on the input
+    if (barcodeInputRef.current) {
+      barcodeInputRef.current.focus();
     }
   };
 
   const handleDeleteCoin = (coinId: string) => {
     if (!currentCase) return;
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    caseService.removeCoinFromCase(currentCase.id, coinId, user.username);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: 'Coin removed',
-      description: 'The coin has been removed from the case',
-      status: 'success',
-      duration: 2000,
-      isClosable: true,
-    });
+    const updatedCase = caseService.removeCoinFromCase(currentCase.id, coinId, user.username);
+    if (updatedCase) {
+      setCurrentCase({
+        ...updatedCase,
+        coins: [...updatedCase.coins],
+        history: [...updatedCase.history]
+      });
+      toast({
+        title: 'Coin removed',
+        description: 'The coin has been removed from the case',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+    }
   };
 
   const handleMoveCoin = (coinId: string) => {
@@ -159,6 +224,86 @@ const CaseDetails: React.FC = () => {
     });
   };
 
+  const handleCloseCase = () => {
+    if (!currentCase) return;
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const updatedCase = caseService.updateCaseStatus(currentCase.id, 'closed', user.username);
+    if (updatedCase) {
+      setCurrentCase(updatedCase);
+      toast({
+        title: 'Case closed',
+        description: `Case ${currentCase.caseNumber} has been closed`,
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+      // Redirect to case management page after a short delay
+      setTimeout(() => {
+        navigate('/show-stock/case-management');
+      }, 1000);
+    }
+  };
+
+  const handleReopenCase = () => {
+    if (!currentCase) return;
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const updatedCase = caseService.updateCaseStatus(currentCase.id, 'open', user.username);
+    if (updatedCase) {
+      setCurrentCase({
+        ...updatedCase,
+        status: 'open',
+        coins: [...updatedCase.coins],
+        history: [...updatedCase.history]
+      });
+      toast({
+        title: 'Case reopened',
+        description: `Case ${currentCase.caseNumber} has been reopened`,
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!currentCase) return;
+
+    // Create CSV content
+    const headers = ['Barcode', 'Coin ID', 'Description', 'Quantity'];
+    const rows = currentCase.coins.map(coin => [
+      coin.barcode,
+      coin.id,
+      coin.name,
+      coin.quantity.toString()
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `case-${currentCase.caseNumber}-export.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Sort history by timestamp in descending order (most recent first)
+  const sortedHistory = currentCase ? [...currentCase.history].sort((a, b) => 
+    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  ) : [];
+
+  // Calculate pagination
+  const totalPages = Math.ceil(sortedHistory.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedHistory = sortedHistory.slice(startIndex, startIndex + itemsPerPage);
+
   if (!currentCase) {
     return <Text>Loading...</Text>;
   }
@@ -170,54 +315,94 @@ const CaseDetails: React.FC = () => {
           <Heading size="lg" color="orange.500">
             Case {currentCase.caseNumber}
           </Heading>
-          <Badge colorScheme={currentCase.status === 'open' ? 'green' : 'red'}>
-            {currentCase.status}
-          </Badge>
+          <HStack>
+            <Button
+              leftIcon={<DownloadIcon />}
+              colorScheme="blue"
+              onClick={handleExportCSV}
+              isDisabled={currentCase.coins.length === 0}
+            >
+              Export CSV
+            </Button>
+            {currentCase.status === 'open' && (
+              <Button
+                colorScheme="red"
+                onClick={handleCloseCase}
+                isDisabled={currentCase.coins.length === 0}
+              >
+                Close Case
+              </Button>
+            )}
+            {currentCase.status === 'closed' && (
+              <Button
+                colorScheme="green"
+                onClick={handleReopenCase}
+              >
+                Reopen Case
+              </Button>
+            )}
+            <Badge colorScheme={currentCase.status === 'open' ? 'green' : 'red'}>
+              {currentCase.status}
+            </Badge>
+          </HStack>
         </HStack>
 
-        {/* Scanning Interface */}
-        <Box
-          p={6}
-          borderWidth={1}
-          borderRadius="lg"
-          bg={bgColor}
-          borderColor={borderColor}
-        >
-          <form onSubmit={handleScan}>
+        {/* Scan Form */}
+        {currentCase.status === 'open' && (
+          <Box
+            p={6}
+            borderWidth={1}
+            borderRadius="lg"
+            bg={bgColor}
+            borderColor={borderColor}
+          >
+            <Heading size="md" mb={4}>Scan Coin</Heading>
             <VStack spacing={4}>
               <FormControl isRequired>
-                <FormLabel>Scan Coin</FormLabel>
+                <FormLabel>Barcode</FormLabel>
                 <Input
+                  ref={barcodeInputRef}
+                  type="text"
                   value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
+                  onChange={handleBarcodeInput}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleScanSubmit();
+                    }
+                  }}
                   placeholder="Scan coin barcode"
                   autoFocus
                   autoComplete="off"
                 />
               </FormControl>
-
               <FormControl isRequired>
                 <FormLabel>Quantity</FormLabel>
-                <Input
-                  type="number"
-                  min="1"
+                <NumberInput
+                  min={1}
                   value={quantity}
-                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                  placeholder="Enter quantity"
-                />
+                  onChange={(value) => setQuantity(Number(value))}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
               </FormControl>
-
               <Button
-                type="submit"
                 colorScheme="blue"
-                width="100%"
-                isLoading={isLoading}
+                width="full"
+                onClick={handleScanSubmit}
+                isLoading={scanQueue.length > 0}
               >
-                Add Coin
+                {scanQueue.length > 0 ? `Processing ${scanQueue.length} coins...` : 'Add Coin'}
               </Button>
+              <Text color="gray.500" fontSize="sm">
+                {scanQueue.length > 0 ? `Processing ${scanQueue.length} coins...` : 'Ready to scan'}
+              </Text>
             </VStack>
-          </form>
-        </Box>
+          </Box>
+        )}
 
         {/* Coins Table */}
         <Box overflowX="auto">
@@ -235,7 +420,7 @@ const CaseDetails: React.FC = () => {
               {currentCase.coins.map((coin) => (
                 <Tr key={coin.id}>
                   <Td>{coin.barcode}</Td>
-                  <Td>{coin.id}</Td>
+                  <Td>{coin.id === 'pending' ? 'Loading...' : coin.id}</Td>
                   <Td>{coin.name}</Td>
                   <Td>{coin.quantity}</Td>
                   <Td>
@@ -260,6 +445,94 @@ const CaseDetails: React.FC = () => {
               ))}
             </Tbody>
           </Table>
+        </Box>
+
+        {/* Case History Section */}
+        <Box
+          p={6}
+          borderWidth={1}
+          borderRadius="lg"
+          bg={bgColor}
+          borderColor={borderColor}
+        >
+          <Heading size="md" mb={4}>Case History</Heading>
+          <Text mb={4} color="gray.500">
+            Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, sortedHistory.length)} of {sortedHistory.length} entries
+          </Text>
+          <Table variant="simple">
+            <Thead>
+              <Tr>
+                <Th>Timestamp</Th>
+                <Th>Action</Th>
+                <Th>User</Th>
+                <Th>Details</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {paginatedHistory.map((entry, index) => (
+                <Tr key={index}>
+                  <Td>{new Date(entry.timestamp).toLocaleString()}</Td>
+                  <Td>
+                    <Badge colorScheme={
+                      entry.action === 'created' ? 'green' :
+                      entry.action === 'closed' ? 'red' :
+                      entry.action === 'opened' ? 'blue' :
+                      entry.action === 'coin_added' ? 'purple' :
+                      entry.action === 'coin_removed' ? 'orange' :
+                      entry.action === 'coin_moved' ? 'yellow' :
+                      entry.action === 'coin_updated' ? 'teal' : 'gray'
+                    }>
+                      {entry.action.replace('_', ' ')}
+                    </Badge>
+                  </Td>
+                  <Td>{entry.userId}</Td>
+                  <Td>{entry.details}</Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+          
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <Box mt={4}>
+              <Flex justify="space-between" align="center" mb={2}>
+                <Text color="gray.500">
+                  Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, sortedHistory.length)} of {sortedHistory.length} entries
+                </Text>
+                <Text color="gray.500">
+                  Page {currentPage} of {totalPages}
+                </Text>
+              </Flex>
+              <Flex justify="center" gap={2}>
+                <Button
+                  leftIcon={<ChevronLeftIcon />}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  isDisabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <HStack spacing={1}>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <Button
+                      key={page}
+                      size="sm"
+                      colorScheme={currentPage === page ? "blue" : "gray"}
+                      onClick={() => setCurrentPage(page)}
+                    >
+                      {page}
+                    </Button>
+                  ))}
+                </HStack>
+                <Button
+                  rightIcon={<ChevronRightIcon />}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  isDisabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </Flex>
+            </Box>
+          )}
         </Box>
       </VStack>
 

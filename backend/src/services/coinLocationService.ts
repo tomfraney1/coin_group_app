@@ -1,6 +1,8 @@
 import { CoinLocation } from '../types/coin';
+import { query } from '../utils/db';
 
 interface LocationHistory {
+  id?: number;
   coinId: string;
   location: CoinLocation;
   userId: string;
@@ -8,32 +10,55 @@ interface LocationHistory {
 }
 
 class CoinLocationService {
-  private locationHistory: LocationHistory[] = [];
-
   async assignCoinToLocation(coinId: string, location: CoinLocation, userId: string): Promise<void> {
-    this.locationHistory.push({
-      coinId,
-      location,
-      userId,
-      timestamp: new Date()
-    });
+    await query(
+      `INSERT INTO coin_locations (coin_id, location, user_id, timestamp)
+       VALUES ($1, $2, $3, $4)`,
+      [coinId, location, userId, new Date()]
+    );
   }
 
   async getCoinLocation(coinId: string): Promise<CoinLocation | null> {
-    const latestHistory = this.locationHistory
-      .filter(h => h.coinId === coinId)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
+    const result = await query(
+      `SELECT location
+       FROM coin_locations
+       WHERE coin_id = $1
+       ORDER BY timestamp DESC
+       LIMIT 1`,
+      [coinId]
+    );
     
-    return latestHistory?.location || null;
+    return result.rows[0]?.location || null;
   }
 
   async getLocationHistory(coinId: string): Promise<LocationHistory[]> {
-    return this.locationHistory
-      .filter(h => h.coinId === coinId)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    const result = await query(
+      `SELECT id, coin_id as "coinId", location, user_id as "userId", timestamp
+       FROM coin_locations
+       WHERE coin_id = $1
+       ORDER BY timestamp DESC`,
+      [coinId]
+    );
+
+    return result.rows;
   }
 
   async getLocationCounts(): Promise<Record<CoinLocation, number>> {
+    const result = await query(
+      `WITH latest_locations AS (
+         SELECT DISTINCT ON (coin_id)
+           coin_id,
+           location
+         FROM coin_locations
+         ORDER BY coin_id, timestamp DESC
+       )
+       SELECT 
+         location,
+         COUNT(*) as count
+       FROM latest_locations
+       GROUP BY location`
+    );
+
     const counts: Record<CoinLocation, number> = {
       UCB: 0,
       '1NAT': 0,
@@ -42,26 +67,29 @@ class CoinLocationService {
       WMP: 0
     };
 
-    this.locationHistory.forEach(h => {
-      counts[h.location]++;
+    result.rows.forEach(row => {
+      counts[row.location as CoinLocation] = parseInt(row.count);
     });
 
     return counts;
   }
 
   async getCoinsByLocation(location: CoinLocation): Promise<string[]> {
-    const latestHistory = new Map<string, LocationHistory>();
-    
-    this.locationHistory.forEach(h => {
-      if (!latestHistory.has(h.coinId) || 
-          h.timestamp > latestHistory.get(h.coinId)!.timestamp) {
-        latestHistory.set(h.coinId, h);
-      }
-    });
+    const result = await query(
+      `WITH latest_locations AS (
+         SELECT DISTINCT ON (coin_id)
+           coin_id,
+           location
+         FROM coin_locations
+         ORDER BY coin_id, timestamp DESC
+       )
+       SELECT coin_id
+       FROM latest_locations
+       WHERE location = $1`,
+      [location]
+    );
 
-    return Array.from(latestHistory.values())
-      .filter(h => h.location === location)
-      .map(h => h.coinId);
+    return result.rows.map(row => row.coin_id);
   }
 }
 

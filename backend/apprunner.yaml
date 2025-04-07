@@ -1,0 +1,21 @@
+version: 1.0
+runtime: nodejs18
+build:
+  commands:
+    build:
+      - npm ci
+      - npm run build
+run:
+  runtime-version: 18
+  command: npm start
+  network:
+    port: 3000
+  env:
+    - name: NODE_ENV
+      value: production
+    - name: DATABASE_URL
+      value: postgresql://postgres:postgres@coingroupstack-coingroupdatabaseinstance1-1.cdpn01mowopr.us-east-1.rds.amazonaws.com:5432/coingroup
+    - name: JWT_SECRET
+      value: your-secret-key
+    - name: CORS_ORIGIN
+      value: https://dq7a2s6s65c7b.cloudfront.net 

@@ -14,8 +14,13 @@ declare global {
 }
 
 export const authenticateToken: RequestHandler = (req, res, next) => {
+  console.log('Auth middleware - Request headers:', req.headers);
+  
   const authHeader = req.headers['authorization'];
+  console.log('Auth header:', authHeader);
+  
   const token = authHeader && authHeader.split(' ')[1];
+  console.log('Extracted token:', token ? 'Token present' : 'No token');
 
   if (!token) {
     console.error('No token provided in request');
