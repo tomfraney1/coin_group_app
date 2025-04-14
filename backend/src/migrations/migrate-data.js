@@ -39,17 +39,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var pg_1 = require("pg");
 var dotenv = require("dotenv");
 dotenv.config();
-// AWS RDS connection
-var sourcePool = new pg_1.Pool({
-    user: 'coingroup',
-    host: 'coingroup-db.c0f4ay4sop87.us-east-1.rds.amazonaws.com',
-    database: 'coingroup',
-    password: '3KpFHS9mhap3Asur5XYt',
-    port: 5432,
-    ssl: {
-        rejectUnauthorized: false
-    }
-});
 // Google Cloud SQL connection (through proxy)
 var targetPool = new pg_1.Pool({
     user: 'coingroup',
@@ -59,17 +48,14 @@ var targetPool = new pg_1.Pool({
     port: 5433
 });
 async function migrateData() {
-    var sourceClient, targetClient;
+    var targetClient;
     try {
-        console.log('Connecting to source database...');
-        sourceClient = await sourcePool.connect();
-        console.log('Successfully connected to source database');
-        console.log('Connecting to target database...');
+        console.log('Connecting to database...');
         targetClient = await targetPool.connect();
-        console.log('Successfully connected to target database');
+        console.log('Successfully connected to database');
         // Migrate users
-        console.log('Fetching users from source database...');
-        var usersResult = await sourceClient.query('SELECT * FROM users');
+        console.log('Fetching users from database...');
+        var usersResult = await targetClient.query('SELECT * FROM users');
         console.log("Found ".concat(usersResult.rows.length, " users to migrate"));
         for (var _i = 0, _a = usersResult.rows; _i < _a.length; _i++) {
             var user = _a[_i];
@@ -85,8 +71,8 @@ async function migrateData() {
             ]);
         }
         // Migrate coin_locations
-        console.log('Fetching coin locations from source database...');
-        var locationsResult = await sourceClient.query('SELECT * FROM coin_locations');
+        console.log('Fetching coin locations from database...');
+        var locationsResult = await targetClient.query('SELECT * FROM coin_locations');
         console.log("Found ".concat(locationsResult.rows.length, " coin locations to migrate"));
         for (var _b = 0, _c = locationsResult.rows; _b < _c.length; _b++) {
             var location_1 = _c[_b];
@@ -100,8 +86,8 @@ async function migrateData() {
             ]);
         }
         // Migrate migrations
-        console.log('Fetching migrations from source database...');
-        var migrationsResult = await sourceClient.query('SELECT * FROM migrations');
+        console.log('Fetching migrations from database...');
+        var migrationsResult = await targetClient.query('SELECT * FROM migrations');
         console.log("Found ".concat(migrationsResult.rows.length, " migrations to migrate"));
         for (var _d = 0, _e = migrationsResult.rows; _d < _e.length; _d++) {
             var migration = _e[_d];
@@ -121,13 +107,9 @@ async function migrateData() {
             console.error('Error hint:', error.hint);
         }
     } finally {
-        if (sourceClient) {
-            await sourceClient.release();
-        }
         if (targetClient) {
             await targetClient.release();
         }
-        await sourcePool.end();
         await targetPool.end();
     }
 }

@@ -11,7 +11,7 @@ A web application for managing and tracking coin locations across different inst
 ## Prerequisites
 
 - Node.js (v16 or higher)
-- MongoDB
+- PostgreSQL
 - npm or yarn
 
 ## Development Setup
@@ -50,7 +50,9 @@ A web application for managing and tracking coin locations across different inst
 1. Set up production environment variables:
    - Copy `backend/.env.production` to `backend/.env`
    - Update with your production settings:
-     - `MONGODB_URI`: Your production MongoDB connection string
+     - `DB_USER`: Your Google Cloud SQL username
+     - `DB_PASSWORD`: Your Google Cloud SQL password
+     - `DB_NAME`: Your database name
      - `JWT_SECRET`: A secure random string for JWT signing
      - `PORT`: The port number (default: 3001)
 
@@ -60,9 +62,9 @@ A web application for managing and tracking coin locations across different inst
    npm run build
    ```
 
-3. Start the production server:
+3. Deploy to Google Cloud Run:
    ```bash
-   npm start
+   gcloud run deploy coingroup-backend --source .
    ```
 
 ### Frontend Deployment
@@ -73,8 +75,10 @@ A web application for managing and tracking coin locations across different inst
    npm run build
    ```
 
-2. The built files will be in the `frontend/dist` directory
-3. Deploy these files to your web server
+2. Deploy to Google Cloud Storage:
+   ```bash
+   gsutil cp -r dist/* gs://your-bucket-name/
+   ```
 
 ## Security Considerations
 
@@ -89,7 +93,7 @@ A web application for managing and tracking coin locations across different inst
 1. Implement logging
 2. Set up health checks
 3. Monitor server resources
-4. Regular backups of MongoDB data
+4. Regular backups of database data
 
 ## License
 
