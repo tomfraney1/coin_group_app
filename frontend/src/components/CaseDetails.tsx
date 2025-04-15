@@ -175,17 +175,31 @@ const CaseDetails: React.FC = () => {
   const handleScanSubmit = async () => {
     if (!currentCase || !barcode) return;
     
+    // Store the current barcode and quantity before clearing
+    const currentBarcode = barcode;
+    const currentQuantity = quantity;
+    
+    // Clear form immediately for next scan
+    setBarcode('');
+    setQuantity(1);
+    
+    // Keep focus on the input
+    if (barcodeInputRef.current) {
+      barcodeInputRef.current.focus();
+    }
+    
     try {
       // Look up coin data in real-time
-      const enrichedData = await enrichCoin(barcode);
+      const enrichedData = await enrichCoin(currentBarcode);
       
-      // Add coin to case with enriched data
+      if (!enrichedData) {
+        throw new Error('Failed to enrich coin data');
+      }
+
+      // Add coin to case with just barcode and quantity
       const coin = await caseService.addCoinToCase(currentCase.id, {
-        barcode,
-        coinId: enrichedData.coinId,
-        description: enrichedData.description,
-        grade: enrichedData.grade,
-        quantity: quantity
+        barcode: currentBarcode,
+        quantity: currentQuantity
       });
       
       // Update the current case with the new coin
@@ -199,20 +213,11 @@ const CaseDetails: React.FC = () => {
 
       toast({
         title: 'Coin added',
-        description: `Added ${quantity} ${enrichedData.description} to case ${currentCase.caseNumber}`,
+        description: `Added ${currentQuantity} ${enrichedData.description || 'coin'} to case ${currentCase.caseNumber}`,
         status: 'success',
-        duration: 2000,
+        duration: 1000, // Shorter duration for continuous scanning
         isClosable: true,
       });
-
-      // Clear form for next scan
-      setBarcode('');
-      setQuantity(1);
-      
-      // Keep focus on the input
-      if (barcodeInputRef.current) {
-        barcodeInputRef.current.focus();
-      }
     } catch (error) {
       toast({
         title: 'Error adding coin',
@@ -295,8 +300,10 @@ const CaseDetails: React.FC = () => {
   const handleReopenCase = async () => {
     if (!currentCase) return;
     try {
-      const updatedCase = await caseService.updateCaseStatus(currentCase.id, 'open');
-      setCurrentCase(updatedCase);
+      // Update case status
+      await caseService.updateCaseStatus(currentCase.id, 'open');
+      
+      // Show success message
       toast({
         title: 'Case reopened',
         description: 'The case has been reopened',
@@ -304,6 +311,21 @@ const CaseDetails: React.FC = () => {
         duration: 2000,
         isClosable: true,
       });
+      
+      // Force a refresh of the case data
+      const [updatedCase, history] = await Promise.all([
+        caseService.getCase(currentCase.id),
+        caseService.getCaseHistory(currentCase.id)
+      ]);
+      
+      // Update the current case state with fresh data
+      setCurrentCase({
+        ...updatedCase,
+        history
+      });
+      
+      // Navigate to the same URL to trigger a re-render
+      navigate(`/show-stock/case-management/${currentCase.id}`, { replace: true });
     } catch (error) {
       toast({
         title: 'Error reopening case',
