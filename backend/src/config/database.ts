@@ -3,20 +3,57 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Cloud SQL Proxy connection configuration
+// Parse the DATABASE_URL environment variable
+export const parseDatabaseUrl = (url: string) => {
+  // Handle Cloud SQL Unix socket format
+  if (url.includes('/cloudsql/')) {
+    const match = url.match(/postgresql:\/\/([^:]+):([^@]+)@\/([^?]+)\?host=\/cloudsql\/(.+)/);
+    if (!match) {
+      throw new Error('Invalid Cloud SQL connection string format');
+    }
+    const [, user, password, database, instance] = match;
+    return {
+      user,
+      password,
+      database,
+      host: `/cloudsql/${instance}`,
+    };
+  }
+
+  // Handle standard PostgreSQL URL format
+  const parsed = new URL(url);
+  return {
+    user: parsed.username,
+    password: parsed.password,
+    host: parsed.hostname,
+    database: parsed.pathname.slice(1),
+    port: parseInt(parsed.port, 10),
+  };
+};
+
+// Get database configuration from environment
+const dbConfig = process.env.DATABASE_URL 
+  ? parseDatabaseUrl(process.env.DATABASE_URL)
+  : {
+      user: process.env.DB_USER || 'postgres',
+      host: process.env.DB_HOST || '127.0.0.1',
+      database: process.env.DB_NAME || 'coingroup',
+      password: process.env.DB_PASSWORD || 'postgres',
+      port: Number(process.env.DB_PORT) || 5432,
+    };
+
+// Create the database pool
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || '127.0.0.1',
-  database: process.env.DB_NAME || 'coingroup',
-  password: process.env.DB_PASSWORD || 'postgres',
-  port: Number(process.env.DB_PORT) || 5433,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
+  ...dbConfig,
+  ssl: process.env.NODE_ENV === 'production' && !dbConfig.host.includes('/cloudsql/') 
+    ? { rejectUnauthorized: false } 
+    : false
 });
 
 const connectDB = async () => {
   try {
     const client = await pool.connect();
-    console.log('✅ Connected to PostgreSQL through Cloud SQL Proxy');
+    console.log('✅ Connected to PostgreSQL');
     
     // Test the connection
     const result = await client.query('SELECT NOW()');
@@ -25,9 +62,7 @@ const connectDB = async () => {
     client.release();
   } catch (error: any) {
     console.error('❌ Error connecting to PostgreSQL:', error);
-    if (error.code === 'ECONNREFUSED') {
-      console.error('❌ Connection refused. Please ensure Cloud SQL Proxy is running on port 5433');
-    }
+    console.error('Database Connection Config:', dbConfig);
     process.exit(1);
   }
 };

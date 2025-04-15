@@ -1,26 +1,33 @@
 import { Pool, PoolClient, QueryConfig } from 'pg';
 import dotenv from 'dotenv';
+import { parseDatabaseUrl } from '../config/database';
 
 dotenv.config();
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 
+// Get database configuration from environment
+const dbConfig = process.env.DATABASE_URL 
+  ? parseDatabaseUrl(process.env.DATABASE_URL)
+  : {
+      user: process.env.DB_USER || 'postgres',
+      host: process.env.DB_HOST || '127.0.0.1',
+      database: process.env.DB_NAME || 'coingroup',
+      password: process.env.DB_PASSWORD || 'postgres',
+      port: Number(process.env.DB_PORT) || 5432,
+    };
+
 // Log database connection details
-console.log('Database Connection Config:', {
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || '127.0.0.1', // Cloud SQL Proxy listens on localhost
-  database: process.env.DB_NAME || 'coingroup',
-  port: Number(process.env.DB_PORT) || 5432, // Default PostgreSQL port
-  ssl: undefined
-});
+console.log('Database Connection Config:', dbConfig);
+
+// Don't use SSL for Unix socket connections
+const isUnixSocket = dbConfig.host?.startsWith('/cloudsql/');
 
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || '127.0.0.1', // Cloud SQL Proxy listens on localhost
-  database: process.env.DB_NAME || 'coingroup',
-  password: process.env.DB_PASSWORD || 'postgres',
-  port: Number(process.env.DB_PORT) || 5432, // Default PostgreSQL port
-  ssl: undefined
+  ...dbConfig,
+  ssl: !isUnixSocket && process.env.NODE_ENV === 'production' ? {
+    rejectUnauthorized: false
+  } : undefined
 });
 
 export const query = async (text: string, params?: any[]) => {

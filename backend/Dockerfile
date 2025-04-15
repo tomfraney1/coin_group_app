@@ -12,9 +12,6 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY package*.json ./
 RUN npm install --production
-
-# Set default port
 ENV PORT=8080
-
 EXPOSE ${PORT}
 CMD ["node", "dist/server.js"] 

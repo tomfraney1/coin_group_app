@@ -61,59 +61,75 @@ router.post('/register', (async (req: Request, res: Response) => {
 // Login user
 router.post('/login', (async (req: Request, res: Response) => {
   try {
+    console.log('Login attempt:', { email: req.body.email });
     const { email, password } = req.body;
-    console.log('Login attempt for email:', email);
 
-    // Find user
+    if (!email || !password) {
+      console.log('Missing email or password');
+      res.status(400).json({ message: 'Email and password are required' });
+      return;
+    }
+
+    // Find user by email
+    console.log('Looking up user by email:', email);
     const user = await User.findByEmail(email);
     if (!user) {
-      console.log('User not found:', email);
-      res.status(401).json({ message: 'Invalid credentials' });
-      return;
-    }
-    console.log('User found, comparing passwords');
-
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
-    console.log('Password comparison result:', isMatch);
-    console.log('Stored hash:', user.password);
-    console.log('Provided password:', password);
-
-    if (!isMatch) {
-      console.log('Password mismatch');
-      res.status(401).json({ message: 'Invalid credentials' });
+      console.log('User not found for email:', email);
+      res.status(401).json({ message: 'Invalid email or password' });
       return;
     }
 
-    // Update last login
-    if (user.id) {
-      await User.update(user.id, { lastLogin: new Date() });
+    // Check if user is active
+    if (!user.isActive) {
+      console.log('User account is deactivated:', email);
+      res.status(401).json({ message: 'Account is deactivated' });
+      return;
+    }
+
+    // Verify password
+    console.log('Verifying password for user:', email);
+    const isPasswordValid = await User.comparePassword(user, password);
+    if (!isPasswordValid) {
+      console.log('Invalid password for user:', email);
+      res.status(401).json({ message: 'Invalid email or password' });
+      return;
     }
 
     // Generate JWT token
     const JWT_SECRET = process.env.JWT_SECRET;
     if (!JWT_SECRET) {
+      console.error('JWT_SECRET is not set');
       throw new Error('JWT_SECRET environment variable is not set');
     }
 
+    console.log('Generating JWT token for user:', email);
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
 
+    // Update last login
+    console.log('Updating last login for user:', email);
+    await User.update(user.id!, { lastLogin: new Date() });
+
+    console.log('Login successful for user:', email);
     res.json({
       token,
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role,
-      },
+        role: user.role
+      }
     });
   } catch (error) {
-    console.error('Error logging in:', error);
-    res.status(500).json({ message: 'Error logging in', error });
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      message: 'Error logging in',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
   }
 }) as RequestHandler);
 

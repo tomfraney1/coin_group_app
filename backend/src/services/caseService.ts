@@ -155,7 +155,7 @@ export class CaseService {
     });
   }
 
-  async addCoinToCase(caseId: string, coinData: { barcode: string; quantity: number }): Promise<any> {
+  async addCoinToCase(caseId: string, coinData: { barcode: string; quantity: number; name?: string }): Promise<any> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -180,7 +180,7 @@ export class CaseService {
           enrichedCoin.coinId,
           enrichedCoin.grade,
           enrichedCoin.description,
-          enrichedCoin.description // Use description as name
+          coinData.name || enrichedCoin.description
         ]
       );
 

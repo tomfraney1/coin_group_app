@@ -9,7 +9,7 @@ import CaseNotificationService from './websocket/caseNotifications';
 import { connectDB } from './config/database';
 
 const app = express();
-const port = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT) || 8080;
 const server = createServer(app);
 
 // Initialize WebSocket service

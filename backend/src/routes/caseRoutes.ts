@@ -90,7 +90,7 @@ export const initializeCaseRoutes = (notificationService: CaseNotificationServic
         barcode,
         name: coinName,
         quantity: quantity || 1
-      }, userId);
+      });
 
       notificationService.notifyCoinAdded(req.params.id, coin);
       res.status(201).json(coin);
