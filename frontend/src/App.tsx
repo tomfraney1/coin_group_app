@@ -10,6 +10,7 @@ import OMMNIUploader from './components/OmniUploader'
 import CaseManagement from './components/CaseManagement'
 import CaseDetails from './components/CaseDetails'
 import StockTake from './components/StockTake'
+import SpotPriceCalculator from './components/SpotPriceCalculator'
 import { isDevelopment, developmentUser } from './config'
 
 // Placeholder components for each service
@@ -37,6 +38,7 @@ function App() {
   const [showStockOpen, setShowStockOpen] = useState(false)
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [userManagementOpen, setUserManagementOpen] = useState(false)
+  const [spotPriceOpen, setSpotPriceOpen] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -195,6 +197,34 @@ function App() {
                       </Collapse>
                     </Box>
 
+                    {/* Spot Price Calculator Section */}
+                    <Box>
+                      <ChakraLink
+                        onClick={() => setSpotPriceOpen(!spotPriceOpen)}
+                        display="flex"
+                        alignItems="center"
+                        cursor="pointer"
+                        color={linkColor}
+                        px={4}
+                        py={2}
+                        borderRadius="md"
+                        _hover={{ bg: linkHoverBg }}
+                      >
+                        <Text fontWeight="medium">Spot Price Calculator</Text>
+                        <Icon
+                          as={spotPriceOpen ? ChevronDownIcon : ChevronRightIcon}
+                          ml={2}
+                        />
+                      </ChakraLink>
+                      <Collapse in={spotPriceOpen}>
+                        <VStack gap={2} align="stretch" pl={4} mt={2}>
+                          <NavLink to="/spot-price-calculator">
+                            <Text>Calculator</Text>
+                          </NavLink>
+                        </VStack>
+                      </Collapse>
+                    </Box>
+
                     {/* Inventory Section */}
                     <Box>
                       <ChakraLink
@@ -271,6 +301,7 @@ function App() {
                       <Route path="/show-stock/case-management" element={<ProtectedRoute><CaseManagement /></ProtectedRoute>} />
                       <Route path="/show-stock/case-management/:caseId" element={<ProtectedRoute><CaseDetails /></ProtectedRoute>} />
                       <Route path="/show-stock/stock-take" element={<ProtectedRoute><StockTake /></ProtectedRoute>} />
+                      <Route path="/spot-price-calculator" element={<ProtectedRoute><SpotPriceCalculator /></ProtectedRoute>} />
                       <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
                       <Route path="/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
                       <Route path="/users/list" element={<ProtectedRoute><UserList /></ProtectedRoute>} />
