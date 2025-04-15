@@ -55,7 +55,7 @@ const CaseDetails: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<CaseCoin | null>(null);
-  const [targetCaseId, setTargetCaseId] = useState('');
+  const [targetCaseId, setTargetCaseId] = useState<string>('');
   const cancelRef = React.useRef<HTMLButtonElement>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
@@ -68,18 +68,55 @@ const CaseDetails: React.FC = () => {
   const [tempCoins, setTempCoins] = useState<{ [key: string]: CaseCoin }>({});
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [availableCases, setAvailableCases] = useState<Case[]>([]);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
   useEffect(() => {
     if (caseId) {
-      const case_ = caseService.getCase(caseId);
-      if (case_) {
-        setCurrentCase(case_);
-      }
+      const fetchCaseData = async () => {
+        try {
+          const [caseData, history] = await Promise.all([
+            caseService.getCase(caseId),
+            caseService.getCaseHistory(caseId)
+          ]);
+          setCurrentCase({
+            ...caseData,
+            history
+          });
+        } catch (error) {
+          console.error('Error fetching case data:', error);
+          toast({
+            title: 'Error',
+            description: 'Failed to load case data',
+            status: 'error',
+            duration: 5000,
+            isClosable: true,
+          });
+        }
+      };
+      fetchCaseData();
     }
-  }, [caseId]);
+  }, [caseId, toast]);
+
+  useEffect(() => {
+    const fetchCases = async () => {
+      try {
+        const cases = await caseService.getCases();
+        setAvailableCases(cases);
+      } catch (error) {
+        toast({
+          title: 'Error loading cases',
+          description: error instanceof Error ? error.message : 'Failed to load cases',
+          status: 'error',
+          duration: 2000,
+          isClosable: true,
+        });
+      }
+    };
+    fetchCases();
+  }, []);
 
   // Process the scan queue
   useEffect(() => {
@@ -90,56 +127,25 @@ const CaseDetails: React.FC = () => {
       const { barcode, quantity } = scanQueue[0];
 
       try {
-        // Add temporary coin immediately
-        const tempCoin: CaseCoin = {
-          id: 'pending',
-          barcode,
-          name: 'Loading...',
-          quantity
-        };
+        // Add coin to case
+        const coin = await caseService.addCoinToCase(currentCase!.id, { barcode, quantity });
+        
+        // Update the current case with the new coin
+        setCurrentCase(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            coins: [...prev.coins, coin]
+          };
+        });
 
-        if (currentCase) {
-          const user = JSON.parse(localStorage.getItem('user') || '{}');
-          const updatedCase = caseService.addCoinToCase(currentCase.id, tempCoin, user.username);
-          if (updatedCase) {
-            setCurrentCase(updatedCase);
-            setTempCoins(prev => ({ ...prev, [barcode]: tempCoin }));
-          }
-        }
-
-        // Enrich coin data
-        const enrichedData = await enrichCoin(barcode);
-        if (!enrichedData || !enrichedData.coinId) {
-          throw new Error('Failed to enrich coin data');
-        }
-
-        // Update the coin with enriched data
-        const enrichedCoin: CaseCoin = {
-          id: enrichedData.coinId,
-          barcode,
-          name: enrichedData.description || `${enrichedData.year || ''} ${enrichedData.denomination || ''} ${enrichedData.grade || ''}`.trim() || 'Unknown Coin',
-          quantity
-        };
-
-        if (currentCase) {
-          const user = JSON.parse(localStorage.getItem('user') || '{}');
-          const updatedCase = caseService.updateCoinInCase(currentCase.id, enrichedCoin, user.username);
-          if (updatedCase) {
-            setCurrentCase(updatedCase);
-            setTempCoins(prev => {
-              const newTempCoins = { ...prev };
-              delete newTempCoins[barcode];
-              return newTempCoins;
-            });
-            toast({
-              title: 'Coin added',
-              description: `Added ${quantity} ${enrichedCoin.name} to case ${currentCase.caseNumber}`,
-              status: 'success',
-              duration: 2000,
-              isClosable: true,
-            });
-          }
-        }
+        toast({
+          title: 'Coin added',
+          description: `Added ${quantity} ${coin.name} to case ${currentCase!.caseNumber}`,
+          status: 'success',
+          duration: 2000,
+          isClosable: true,
+        });
       } catch (error) {
         toast({
           title: 'Error adding coin',
@@ -148,24 +154,16 @@ const CaseDetails: React.FC = () => {
           duration: 2000,
           isClosable: true,
         });
-        // Remove the temporary coin if enrichment failed
-        if (currentCase) {
-          const user = JSON.parse(localStorage.getItem('user') || '{}');
-          caseService.removeCoinFromCase(currentCase.id, 'pending', user.username);
-          setTempCoins(prev => {
-            const newTempCoins = { ...prev };
-            delete newTempCoins[barcode];
-            return newTempCoins;
-          });
-        }
       } finally {
         setScanQueue(prev => prev.slice(1));
         setProcessingQueue(false);
       }
     };
 
-    processQueue();
-  }, [scanQueue, currentCase, processingQueue]);
+    if (currentCase) {
+      processQueue();
+    }
+  }, [scanQueue, currentCase, processingQueue, toast]);
 
   // Handle barcode input
   const handleBarcodeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,27 +172,73 @@ const CaseDetails: React.FC = () => {
   };
 
   // Handle scan submission
-  const handleScanSubmit = () => {
+  const handleScanSubmit = async () => {
     if (!currentCase || !barcode) return;
     
-    setScanQueue(prev => [...prev, { barcode, quantity }]);
-    setBarcode('');
-    // Keep focus on the input
-    if (barcodeInputRef.current) {
-      barcodeInputRef.current.focus();
+    try {
+      // Look up coin data in real-time
+      const enrichedData = await enrichCoin(barcode);
+      
+      // Add coin to case with enriched data
+      const coin = await caseService.addCoinToCase(currentCase.id, {
+        barcode,
+        coinId: enrichedData.coinId,
+        description: enrichedData.description,
+        grade: enrichedData.grade,
+        quantity: quantity
+      });
+      
+      // Update the current case with the new coin
+      setCurrentCase(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          coins: [...prev.coins, coin]
+        };
+      });
+
+      toast({
+        title: 'Coin added',
+        description: `Added ${quantity} ${enrichedData.description} to case ${currentCase.caseNumber}`,
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+
+      // Clear form for next scan
+      setBarcode('');
+      setQuantity(1);
+      
+      // Keep focus on the input
+      if (barcodeInputRef.current) {
+        barcodeInputRef.current.focus();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error adding coin',
+        description: error instanceof Error ? error.message : 'Failed to add coin to case',
+        status: 'error',
+        duration: 2000,
+        isClosable: true,
+      });
     }
   };
 
-  const handleDeleteCoin = (coinId: string) => {
+  const handleDeleteCoin = async (barcode: string) => {
     if (!currentCase) return;
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const updatedCase = caseService.removeCoinFromCase(currentCase.id, coinId, user.username);
-    if (updatedCase) {
-      setCurrentCase({
-        ...updatedCase,
-        coins: [...updatedCase.coins],
-        history: [...updatedCase.history]
+    
+    try {
+      await caseService.removeCoinFromCase(currentCase.id, barcode);
+      
+      // Update the current case by removing the deleted coin
+      setCurrentCase(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          coins: prev.coins.filter(coin => coin.barcode !== barcode)
+        };
       });
+
       toast({
         title: 'Coin removed',
         description: 'The coin has been removed from the case',
@@ -202,63 +246,69 @@ const CaseDetails: React.FC = () => {
         duration: 2000,
         isClosable: true,
       });
+    } catch (error) {
+      toast({
+        title: 'Error removing coin',
+        description: error instanceof Error ? error.message : 'Failed to remove coin from case',
+        status: 'error',
+        duration: 2000,
+        isClosable: true,
+      });
     }
   };
 
-  const handleMoveCoin = (coinId: string) => {
-    if (!currentCase || !targetCaseId) return;
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    caseService.moveCoinBetweenCases(
-      currentCase.id,
-      targetCaseId,
-      coinId,
-      user.username
-    );
-    onClose();
+  const handleMoveCoin = async (coinId: string, targetCaseId: string) => {
     toast({
-      title: 'Coin moved',
-      description: 'The coin has been moved to the selected case',
-      status: 'success',
+      title: 'Not supported',
+      description: 'Moving coins between cases is not supported yet',
+      status: 'info',
       duration: 2000,
       isClosable: true,
     });
   };
 
-  const handleCloseCase = () => {
+  const handleCloseCase = async () => {
     if (!currentCase) return;
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const updatedCase = caseService.updateCaseStatus(currentCase.id, 'closed', user.username);
-    if (updatedCase) {
+    try {
+      const updatedCase = await caseService.updateCaseStatus(currentCase.id, 'closed');
       setCurrentCase(updatedCase);
       toast({
         title: 'Case closed',
-        description: `Case ${currentCase.caseNumber} has been closed`,
+        description: 'The case has been closed',
         status: 'success',
         duration: 2000,
         isClosable: true,
       });
-      // Redirect to case management page after a short delay
-      setTimeout(() => {
-        navigate('/show-stock/case-management');
-      }, 1000);
+      // Navigate back to case management screen
+      navigate('/show-stock/case-management');
+    } catch (error) {
+      toast({
+        title: 'Error closing case',
+        description: error instanceof Error ? error.message : 'Failed to close case',
+        status: 'error',
+        duration: 2000,
+        isClosable: true,
+      });
     }
   };
 
-  const handleReopenCase = () => {
+  const handleReopenCase = async () => {
     if (!currentCase) return;
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const updatedCase = caseService.updateCaseStatus(currentCase.id, 'open', user.username);
-    if (updatedCase) {
-      setCurrentCase({
-        ...updatedCase,
-        status: 'open',
-        coins: [...updatedCase.coins],
-        history: [...updatedCase.history]
-      });
+    try {
+      const updatedCase = await caseService.updateCaseStatus(currentCase.id, 'open');
+      setCurrentCase(updatedCase);
       toast({
         title: 'Case reopened',
-        description: `Case ${currentCase.caseNumber} has been reopened`,
+        description: 'The case has been reopened',
         status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error reopening case',
+        description: error instanceof Error ? error.message : 'Failed to reopen case',
+        status: 'error',
         duration: 2000,
         isClosable: true,
       });
@@ -276,7 +326,7 @@ const CaseDetails: React.FC = () => {
       coin.name,
       coin.quantity.toString()
     ]);
-
+    
     const csvContent = [
       headers.join(','),
       ...rows.map(row => row.join(','))
@@ -285,13 +335,9 @@ const CaseDetails: React.FC = () => {
     // Create and download file
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `case-${currentCase.caseNumber}-export.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = `case_${currentCase.caseNumber}_export.csv`;
     link.click();
-    document.body.removeChild(link);
   };
 
   // Sort history by timestamp in descending order (most recent first)
@@ -420,7 +466,7 @@ const CaseDetails: React.FC = () => {
               {currentCase.coins.map((coin) => (
                 <Tr key={coin.id}>
                   <Td>{coin.barcode}</Td>
-                  <Td>{coin.id === 'pending' ? 'Loading...' : coin.id}</Td>
+                  <Td>{coin.coinId}</Td>
                   <Td>{coin.name}</Td>
                   <Td>{coin.quantity}</Td>
                   <Td>
@@ -428,14 +474,14 @@ const CaseDetails: React.FC = () => {
                       <Button
                         size="sm"
                         colorScheme="orange"
-                        onClick={() => handleMoveCoin(coin.id)}
+                        onClick={() => handleMoveCoin(coin.id, targetCaseId)}
                       >
                         Move
                       </Button>
                       <Button
                         size="sm"
                         colorScheme="red"
-                        onClick={() => handleDeleteCoin(coin.id)}
+                        onClick={() => handleDeleteCoin(coin.barcode)}
                       >
                         Delete
                       </Button>
@@ -550,8 +596,8 @@ const CaseDetails: React.FC = () => {
                 onChange={(e) => setTargetCaseId(e.target.value)}
                 placeholder="Select target case"
               >
-                {caseService.getCases()
-                  .filter(c => c.id !== currentCase.id && c.status === 'open')
+                {availableCases
+                  .filter(c => c.id !== currentCase?.id && c.status === 'open')
                   .map(c => (
                     <option key={c.id} value={c.id}>
                       Case {c.caseNumber}
@@ -563,7 +609,7 @@ const CaseDetails: React.FC = () => {
           <Box p={4} pt={0}>
             <Button
               colorScheme="orange"
-              onClick={() => selectedCoin && handleMoveCoin(selectedCoin.id)}
+              onClick={() => selectedCoin && handleMoveCoin(selectedCoin.id, targetCaseId)}
               width="100%"
               isDisabled={!targetCaseId}
             >
@@ -593,7 +639,7 @@ const CaseDetails: React.FC = () => {
               <Button ref={cancelRef} onClick={() => setIsDeleteDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button colorScheme="red" onClick={() => selectedCoin && handleDeleteCoin(selectedCoin.id)} ml={3}>
+              <Button colorScheme="red" onClick={() => selectedCoin && handleDeleteCoin(selectedCoin.barcode)} ml={3}>
                 Delete
               </Button>
             </AlertDialogFooter>

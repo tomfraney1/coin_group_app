@@ -5,6 +5,7 @@ export interface CaseCoin {
   quantity: number;
   description?: string;
   grade?: string;
+  coinId: string;
 }
 
 export interface CaseHistory {

@@ -96,7 +96,7 @@ export const enrichCoinData = async (barcode: string): Promise<Partial<CoinData[
   const lastSevenDigits = barcode.slice(-7);
   console.log('Last 7 digits of barcode:', lastSevenDigits);
   
-  // Find matching coin in CSV data
+  // Find matching coin in CSV data using last 7 digits of certification number
   const matchingCoin = csvData.find(coin => {
     const certLastSeven = coin.Certification_no.slice(-7);
     console.log('Comparing certification numbers:', {
@@ -201,7 +201,7 @@ export const enrichCoin = async (barcode: string): Promise<Partial<CoinData['enr
   console.log('Starting enrichment process for barcode:', barcode);
   
   try {
-    // First try to enrich from CSV data to get basic info
+    // Enrich from CSV data only
     const csvEnrichedData = await enrichCoinData(barcode);
     console.log('CSV enrichment result:', csvEnrichedData);
 
@@ -209,42 +209,9 @@ export const enrichCoin = async (barcode: string): Promise<Partial<CoinData['enr
       throw new Error('Failed to enrich from product database');
     }
 
-    // Store the product database description
-    const productDbDescription = csvEnrichedData.description;
-
-    // If we have a grading service from CSV data, use it for PCGS API
-    if (csvEnrichedData.gradingService) {
-      try {
-        console.log('Attempting PCGS API enrichment with grading service:', csvEnrichedData.gradingService);
-        const pcgsData = await enrichFromPcgsApi(barcode, csvEnrichedData.gradingService);
-        console.log('PCGS API enrichment result:', pcgsData);
-
-        // Only merge if we got meaningful data from PCGS
-        if (pcgsData && Object.keys(pcgsData).length > 0) {
-          console.log('Merging PCGS data with product database data');
-          return {
-            ...csvEnrichedData,
-            ...pcgsData,
-            // Keep the product database description
-            description: productDbDescription,
-            // Prioritize PCGS certification number if available
-            certificationNumber: pcgsData.certNumber || csvEnrichedData.certificationNumber,
-          };
-        } else {
-          console.log('No meaningful data from PCGS API, using product database data only');
-          return csvEnrichedData;
-        }
-      } catch (pcgsError) {
-        console.error('PCGS API enrichment failed:', pcgsError);
-        console.log('Using product database data only');
-        return csvEnrichedData;
-      }
-    }
-
-    console.log('No grading service found in product database, using product database data only');
     return csvEnrichedData;
   } catch (error) {
-    console.error('Enrichment failed:', error);
+    console.error('Error enriching coin data:', error);
     throw error;
   }
 }; 

@@ -1,266 +1,252 @@
-import { Case as CaseType, CaseCoin, CaseHistory, StockTakeResult, StockTakeReport } from '../types/case';
-import { v4 as uuidv4 } from 'uuid';
+import { Case, CaseCoin, CaseHistory } from '../types/case';
 
-interface CaseHistoryEntry {
-  timestamp: string;
-  action: 'created' | 'closed' | 'opened' | 'coin_added' | 'coin_removed' | 'coin_moved' | 'coin_updated';
-  userId: string;
-  details: string;
-}
-
-export interface Case extends CaseType {
-  history: CaseHistoryEntry[];
-}
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
 
 class CaseService {
-  private cases: Case[] = [];
+  private ws: WebSocket | null = null;
   private subscribers: ((cases: Case[]) => void)[] = [];
-  private stockTakeResults: StockTakeResult[] = [];
-  private stockTakeReports: StockTakeReport[] = [];
+  private cases: Case[] = [];
 
   constructor() {
-    // Load data from localStorage on initialization
-    this.loadData();
+    this.connectWebSocket();
   }
 
-  private loadData() {
-    const savedCases = localStorage.getItem('cases');
-    if (savedCases) {
-      this.cases = JSON.parse(savedCases);
-    }
-
-    const savedResults = localStorage.getItem('stockTakeResults');
-    if (savedResults) {
-      this.stockTakeResults = JSON.parse(savedResults);
-    }
-
-    const savedReports = localStorage.getItem('stockTakeReports');
-    if (savedReports) {
-      this.stockTakeReports = JSON.parse(savedReports);
-    }
+  private async getAuthHeaders() {
+    const token = localStorage.getItem('token');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
   }
 
-  private saveData() {
-    localStorage.setItem('cases', JSON.stringify(this.cases));
-    localStorage.setItem('stockTakeResults', JSON.stringify(this.stockTakeResults));
-    localStorage.setItem('stockTakeReports', JSON.stringify(this.stockTakeReports));
-    this.notifySubscribers();
+  private connectWebSocket() {
+    const token = localStorage.getItem('token');
+    this.ws = new WebSocket(WS_URL);
+
+    this.ws.onopen = () => {
+      console.log('Connected to WebSocket');
+      // Send authentication token
+      this.ws?.send(JSON.stringify({ type: 'auth', token }));
+    };
+
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      switch (data.type) {
+        case 'case_created':
+          this.cases.push(data.data);
+          this.notifySubscribers();
+          break;
+        case 'case_updated':
+          const index = this.cases.findIndex(c => c.id === data.data.id);
+          if (index !== -1) {
+            this.cases[index] = data.data;
+            this.notifySubscribers();
+          }
+          break;
+        case 'coin_added':
+          const caseData = this.cases.find(c => c.id === data.data.caseId);
+          if (caseData) {
+            caseData.coins.push(data.data.coin);
+            this.notifySubscribers();
+          }
+          break;
+        case 'coin_removed':
+          const caseToUpdate = this.cases.find(c => c.id === data.data.caseId);
+          if (caseToUpdate) {
+            caseToUpdate.coins = caseToUpdate.coins.filter(c => c.barcode !== data.data.barcode);
+            this.notifySubscribers();
+          }
+          break;
+        case 'coin_moved':
+          const fromCase = this.cases.find(c => c.id === data.data.fromCaseId);
+          const toCase = this.cases.find(c => c.id === data.data.toCaseId);
+          if (fromCase) {
+            fromCase.coins = fromCase.coins.filter(c => c.id !== data.data.coin.id);
+          }
+          if (toCase) {
+            toCase.coins.push(data.data.coin);
+          }
+          this.notifySubscribers();
+          break;
+      }
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    this.ws.onclose = () => {
+      console.log('WebSocket connection closed');
+      // Attempt to reconnect after a delay
+      setTimeout(() => this.connectWebSocket(), 5000);
+    };
   }
 
   private notifySubscribers() {
     this.subscribers.forEach(callback => callback(this.cases));
   }
 
-  subscribe(callback: (cases: Case[]) => void) {
+  public subscribe(callback: (cases: Case[]) => void): () => void {
     this.subscribers.push(callback);
+    callback(this.cases);
     return () => {
       this.subscribers = this.subscribers.filter(cb => cb !== callback);
     };
   }
 
-  createCase(caseNumber: string, createdBy: string): Case {
-    const newCase: Case = {
-      id: uuidv4(),
-      caseNumber,
-      status: 'open',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      createdBy,
-      coins: [],
-      history: [{
-        timestamp: new Date().toISOString(),
-        action: 'created' as CaseHistory['action'],
-        userId: createdBy,
-        details: 'Case created'
-      }]
-    };
+  public async getCases(): Promise<Case[]> {
+    try {
+      const response = await fetch(`${API_URL}/cases`, {
+        headers: await this.getAuthHeaders()
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch cases');
+      }
 
-    this.cases.push(newCase);
-    this.saveData();
-    return newCase;
-  }
-
-  getCases(): Case[] {
-    return this.cases;
-  }
-
-  getCase(id: string): Case | undefined {
-    return this.cases.find(c => c.id === id);
-  }
-
-  updateCaseStatus(id: string, status: 'open' | 'closed', userId: string): Case | undefined {
-    const case_ = this.cases.find(c => c.id === id);
-    if (!case_) return undefined;
-
-    case_.status = status;
-    case_.updatedAt = new Date().toISOString();
-    if (status === 'closed') {
-      case_.closedAt = new Date().toISOString();
+      this.cases = await response.json();
+      this.notifySubscribers();
+      return this.cases;
+    } catch (error) {
+      console.error('Error fetching cases:', error);
+      throw error;
     }
-
-    case_.history.push({
-      timestamp: new Date().toISOString(),
-      action: status === 'closed' ? 'closed' as CaseHistory['action'] : 'opened' as CaseHistory['action'],
-      userId,
-      details: `Case ${status}`
-    });
-
-    this.saveData();
-    return case_;
   }
 
-  addCoinToCase(caseId: string, coin: CaseCoin, userId: string, quantity: number = 1): Case | undefined {
-    const case_ = this.cases.find(c => c.id === caseId);
-    if (!case_) return undefined;
+  public async getCase(id: string): Promise<Case> {
+    try {
+      const response = await fetch(`${API_URL}/cases/${id}`, {
+        headers: await this.getAuthHeaders()
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch case');
+      }
 
-    // Check if coin already exists in the case
-    const existingCoinIndex = case_.coins.findIndex(c => c.barcode === coin.barcode);
-    
-    if (existingCoinIndex >= 0) {
-      // Update quantity of existing coin
-      case_.coins[existingCoinIndex].quantity += quantity;
-    } else {
-      // Add new coin with quantity
-      case_.coins.push({ ...coin, quantity });
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching case:', error);
+      throw error;
     }
-
-    case_.updatedAt = new Date().toISOString();
-    case_.history.push({
-      timestamp: new Date().toISOString(),
-      action: 'coin_added' as CaseHistory['action'],
-      userId,
-      details: `Added ${quantity} ${coin.name} (${coin.barcode})`
-    });
-
-    this.saveData();
-    return case_;
   }
 
-  removeCoinFromCase(caseId: string, coinId: string, userId: string, quantity: number = 1): Case | undefined {
-    const case_ = this.cases.find(c => c.id === caseId);
-    if (!case_) return undefined;
+  public async createCase(caseNumber: string): Promise<Case> {
+    try {
+      const response = await fetch(`${API_URL}/cases`, {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify({ caseNumber })
+      });
 
-    const coinIndex = case_.coins.findIndex(c => c.id === coinId);
-    if (coinIndex === -1) return undefined;
+      if (!response.ok) {
+        throw new Error('Failed to create case');
+      }
 
-    const coin = case_.coins[coinIndex];
-    
-    if (coin.quantity <= quantity) {
-      // Remove the coin entirely if quantity is 0 or less
-      case_.coins.splice(coinIndex, 1);
-    } else {
-      // Update quantity if there are still coins remaining
-      case_.coins[coinIndex].quantity -= quantity;
+      const newCase = await response.json();
+      return newCase;
+    } catch (error) {
+      console.error('Error creating case:', error);
+      throw error;
     }
-
-    case_.updatedAt = new Date().toISOString();
-    case_.history.push({
-      timestamp: new Date().toISOString(),
-      action: 'coin_removed' as CaseHistory['action'],
-      userId,
-      details: `Removed ${quantity} ${coin.name} (${coin.barcode})`
-    });
-
-    this.saveData();
-    return case_;
   }
 
-  moveCoinBetweenCases(fromCaseId: string, toCaseId: string, coinId: string, userId: string, quantity: number = 1): boolean {
-    const fromCase = this.cases.find(c => c.id === fromCaseId);
-    const toCase = this.cases.find(c => c.id === toCaseId);
-    if (!fromCase || !toCase) return false;
+  public async updateCaseStatus(id: string, status: 'open' | 'closed'): Promise<Case> {
+    try {
+      const response = await fetch(`${API_URL}/cases/${id}/status`, {
+        method: 'PATCH',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify({ status })
+      });
 
-    const coinIndex = fromCase.coins.findIndex(c => c.id === coinId);
-    if (coinIndex === -1) return false;
+      if (!response.ok) {
+        throw new Error('Failed to update case status');
+      }
 
-    const coin = fromCase.coins[coinIndex];
-    if (coin.quantity < quantity) return false;
-
-    // Remove from source case
-    if (coin.quantity <= quantity) {
-      fromCase.coins.splice(coinIndex, 1);
-    } else {
-      fromCase.coins[coinIndex].quantity -= quantity;
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating case status:', error);
+      throw error;
     }
+  }
 
-    // Add to target case
-    const existingCoinIndex = toCase.coins.findIndex(c => c.barcode === coin.barcode);
-    if (existingCoinIndex >= 0) {
-      toCase.coins[existingCoinIndex].quantity += quantity;
-    } else {
-      toCase.coins.push({ ...coin, quantity });
+  public async addCoinToCase(caseId: string, coin: { barcode: string; quantity?: number }): Promise<CaseCoin> {
+    try {
+      const response = await fetch(`${API_URL}/cases/${caseId}/coins`, {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(coin)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add coin to case');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error adding coin to case:', error);
+      throw error;
     }
-
-    // Update timestamps and history
-    fromCase.updatedAt = new Date().toISOString();
-    toCase.updatedAt = new Date().toISOString();
-
-    fromCase.history.push({
-      timestamp: new Date().toISOString(),
-      action: 'coin_moved' as CaseHistory['action'],
-      userId,
-      details: `Moved ${quantity} ${coin.name} (${coin.barcode}) to Case ${toCase.caseNumber}`
-    });
-
-    toCase.history.push({
-      timestamp: new Date().toISOString(),
-      action: 'coin_moved' as CaseHistory['action'],
-      userId,
-      details: `Received ${quantity} ${coin.name} (${coin.barcode}) from Case ${fromCase.caseNumber}`
-    });
-
-    this.saveData();
-    return true;
   }
 
-  addStockTakeResult(result: StockTakeResult): void {
-    this.stockTakeResults.push(result);
-    this.saveData();
+  public async removeCoinFromCase(caseId: string, barcode: string): Promise<void> {
+    try {
+      const response = await fetch(`${API_URL}/cases/${caseId}/coins/${barcode}`, {
+        method: 'DELETE',
+        headers: await this.getAuthHeaders()
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to remove coin from case');
+      }
+    } catch (error) {
+      console.error('Error removing coin from case:', error);
+      throw error;
+    }
   }
 
-  getStockTakeResults(): StockTakeResult[] {
-    return this.stockTakeResults;
+  public async getCaseHistory(caseId: string): Promise<CaseHistory[]> {
+    try {
+      const response = await fetch(`${API_URL}/cases/${caseId}/history`, {
+        headers: await this.getAuthHeaders()
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch case history');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching case history:', error);
+      throw error;
+    }
   }
 
-  generateStockTakeReport(startDate: string, endDate: string, generatedBy: string): StockTakeReport {
-    const report: StockTakeReport = {
-      id: Date.now().toString(),
-      startDate,
-      endDate,
-      generatedAt: new Date().toISOString(),
-      generatedBy,
-      results: this.stockTakeResults.filter(result => 
-        result.performedAt >= startDate && result.performedAt <= endDate
-      )
-    };
+  public async deleteCase(caseId: string): Promise<void> {
+    try {
+      const response = await fetch(`${API_URL}/cases/${caseId}`, {
+        method: 'DELETE',
+        headers: await this.getAuthHeaders()
+      });
 
-    this.stockTakeReports.push(report);
-    this.saveData();
-    return report;
+      if (!response.ok) {
+        throw new Error('Failed to delete case');
+      }
+
+      // Update local cases list
+      this.cases = this.cases.filter(case_ => case_.id !== caseId);
+      this.notifySubscribers();
+    } catch (error) {
+      console.error('Error deleting case:', error);
+      throw error;
+    }
   }
 
-  getStockTakeReports(): StockTakeReport[] {
-    return this.stockTakeReports;
-  }
-
-  updateCoinInCase(caseId: string, coin: CaseCoin, userId: string): Case | null {
-    const cases = this.cases.find(c => c.id === caseId);
-    if (!cases) return null;
-
-    const coinIndex = cases.coins.findIndex(c => c.barcode === coin.barcode);
-    if (coinIndex === -1) return null;
-
-    cases.coins[coinIndex] = coin;
-    this.saveData();
-
-    cases.history.push({
-      timestamp: new Date().toISOString(),
-      action: 'coin_updated' as CaseHistory['action'],
-      userId,
-      details: `Updated coin ${coin.id} (${coin.name}) with barcode ${coin.barcode}`
-    });
-
-    return cases;
+  public disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
   }
 }
 

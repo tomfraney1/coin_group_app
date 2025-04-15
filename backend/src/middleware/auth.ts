@@ -19,7 +19,10 @@ export const authenticateToken: RequestHandler = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   console.log('Auth header:', authHeader);
   
-  const token = authHeader && authHeader.split(' ')[1];
+  // Handle both Bearer token and raw token
+  const token = authHeader ? 
+    (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader) : 
+    null;
   console.log('Extracted token:', token ? 'Token present' : 'No token');
 
   if (!token) {
@@ -28,6 +31,18 @@ export const authenticateToken: RequestHandler = (req, res, next) => {
     return;
   }
 
+  // Check for development token first
+  if (token === 'development-token') {
+    console.log('Development token detected, setting development user');
+    req.user = {
+      userId: 'development-user',
+      role: 'admin'
+    };
+    next();
+    return;
+  }
+
+  // Only attempt JWT verification if it's not a development token
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
     console.log('Decoded token:', { userId: decoded.userId, role: decoded.role });

@@ -1,20 +1,18 @@
 export interface CoinData {
   id: string;
   barcode: string;
-  status: 'pending' | 'enriched' | 'error' | 'uploaded';
-  errorMessage?: string;
-  uploadHistory: Array<{
-    timestamp: string;
-    user: string;
-  }>;
+  status: 'pending' | 'enriched' | 'uploaded' | 'error';
+  uploadHistory: any[];
   enrichedData?: {
-    year?: string;
-    denomination?: string;
-    grade?: string;
+    coinId?: string;
     description?: string;
+    grade?: string;
     quantity?: number;
     certificationNumber?: string;
     gradingService?: string;
+    type?: string;
+    year?: string;
+    denomination?: string;
     mint?: string;
     composition?: string;
     designer?: string;
@@ -28,26 +26,12 @@ export interface CoinData {
     population?: string;
     varieties?: string[];
     pcgsNumber?: string;
-    certNumber?: string;
     seriesName?: string;
     category?: string;
     coinFactsLink?: string;
     coinFactsNotes?: string;
-    type?: string;
-    coinId?: string;
-    auctionList?: Array<{
-      Service: string;
-      Date: string;
-      Auctioneer: string;
-      LotNo: number;
-      LotNumV2: string;
-      SaleName: string;
-      CertNo: string | null;
-      Price: number;
-      IsCAC: boolean;
-      AuctionLotUrl: string;
-    }>;
   };
+  errorMessage?: string;
 }
 
 export interface UploadHistory {

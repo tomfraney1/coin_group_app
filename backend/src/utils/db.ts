@@ -3,8 +3,24 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Log database connection details
+console.log('Database Connection Config:', {
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || '127.0.0.1', // Cloud SQL Proxy listens on localhost
+  database: process.env.DB_NAME || 'coingroup',
+  port: Number(process.env.DB_PORT) || 5432, // Default PostgreSQL port
+  ssl: undefined
+});
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || '127.0.0.1', // Cloud SQL Proxy listens on localhost
+  database: process.env.DB_NAME || 'coingroup',
+  password: process.env.DB_PASSWORD || 'postgres',
+  port: Number(process.env.DB_PORT) || 5432, // Default PostgreSQL port
+  ssl: undefined
 });
 
 export const query = async (text: string, params?: any[]) => {

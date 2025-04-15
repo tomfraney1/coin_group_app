@@ -1,11 +1,19 @@
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import coinLocationRoutes from './routes/coinLocationRoutes';
+import { initializeCaseRoutes } from './routes/caseRoutes';
+import CaseNotificationService from './websocket/caseNotifications';
+import { connectDB } from './config/database';
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
+const server = createServer(app);
+
+// Initialize WebSocket service
+const caseNotificationService = new CaseNotificationService(server);
 
 // Log environment variables
 console.log("🔍 ENV DUMP START");
@@ -14,6 +22,13 @@ console.log("DATABASE_URL:", process.env.DATABASE_URL ? "✔️ set" : "❌ miss
 console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✔️ set" : "❌ missing");
 console.log("CORS_ORIGIN:", process.env.CORS_ORIGIN ? "✔️ set" : "❌ missing");
 console.log("🔍 ENV DUMP END");
+
+// Initialize database connection
+console.log('🔌 Initializing database connection...');
+connectDB().catch(error => {
+  console.error('❌ Failed to connect to database:', error);
+  process.exit(1);
+});
 
 // Middleware
 app.use(cors());
@@ -29,6 +44,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/coin-locations', coinLocationRoutes);
+app.use('/api/cases', initializeCaseRoutes(caseNotificationService));
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -72,7 +88,7 @@ const startServer = async () => {
     // Add a small delay to ensure all initialization is complete
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    const server = app.listen(port, '0.0.0.0', () => {
+    server.listen(port, '0.0.0.0', () => {
       console.log('✅ Server initialization complete');
       console.log('📝 Server details:', {
         port,

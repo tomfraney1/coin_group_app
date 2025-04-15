@@ -46,6 +46,7 @@ const CaseManagement: React.FC = () => {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [newCaseNumber, setNewCaseNumber] = useState('');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const cancelRef = React.useRef<HTMLButtonElement>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
@@ -55,14 +56,32 @@ const CaseManagement: React.FC = () => {
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
   useEffect(() => {
-    // Subscribe to case changes
-    const unsubscribe = caseService.subscribe((newCases) => {
-      setCases(newCases);
-    });
-    // Get initial cases
-    setCases(caseService.getCases());
-    return () => unsubscribe();
-  }, []);
+    const fetchCases = async () => {
+      try {
+        const fetchedCases = await caseService.getCases();
+        // Ensure each case has a coins array
+        const normalizedCases = fetchedCases.map(case_ => ({
+          ...case_,
+          coins: case_.coins || [],
+          history: case_.history || []
+        }));
+        setCases(normalizedCases);
+      } catch (error) {
+        console.error('Error fetching cases:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load cases',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCases();
+  }, [toast]);
 
   const handleCreateCase = () => {
     if (!newCaseNumber) {
@@ -76,31 +95,74 @@ const CaseManagement: React.FC = () => {
       return;
     }
 
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    caseService.createCase(newCaseNumber, user.username);
-    setNewCaseNumber('');
-    onClose();
-    toast({
-      title: 'Case created',
-      description: `Case ${newCaseNumber} has been created`,
-      status: 'success',
-      duration: 3000,
-      isClosable: true,
-    });
+    caseService.createCase(newCaseNumber)
+      .then(() => {
+        setNewCaseNumber('');
+        onClose();
+        // Fetch updated cases list
+        caseService.getCases()
+          .then(fetchedCases => {
+            const normalizedCases = fetchedCases.map(case_ => ({
+              ...case_,
+              coins: case_.coins || [],
+              history: case_.history || []
+            }));
+            setCases(normalizedCases);
+            toast({
+              title: 'Case created',
+              description: `Case ${newCaseNumber} has been created`,
+              status: 'success',
+              duration: 3000,
+              isClosable: true,
+            });
+          })
+          .catch(error => {
+            console.error('Error fetching updated cases:', error);
+            toast({
+              title: 'Error',
+              description: 'Failed to fetch updated cases list',
+              status: 'error',
+              duration: 3000,
+              isClosable: true,
+            });
+          });
+      })
+      .catch((error) => {
+        console.error('Error creating case:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to create case',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      });
   };
 
-  const handleDeleteCase = () => {
+  const handleDeleteCase = async () => {
     if (!selectedCase) return;
     
-    // TODO: Implement case deletion in the service
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: 'Case deleted',
-      description: `Case ${selectedCase.caseNumber} has been deleted`,
-      status: 'success',
-      duration: 3000,
-      isClosable: true,
-    });
+    try {
+      await caseService.deleteCase(selectedCase.id);
+      setIsDeleteDialogOpen(false);
+      setCases(cases.filter(case_ => case_.id !== selectedCase.id));
+      toast({
+        title: 'Case deleted',
+        description: `Case ${selectedCase.caseNumber} has been deleted`,
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error) {
+      console.error('Error deleting case:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete case',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
   };
 
   const handleViewCase = (caseId: string) => {
@@ -148,100 +210,96 @@ const CaseManagement: React.FC = () => {
   };
 
   return (
-    <Box>
-      <VStack spacing={6} align="stretch">
+    <Box p={4}>
+      <VStack spacing={4} align="stretch">
         <HStack justify="space-between">
-          <Heading size="lg" color="orange.500">Case Management</Heading>
-          <HStack>
-            <Button
-              leftIcon={<DownloadIcon />}
-              colorScheme="blue"
-              onClick={handleExportCSV}
-              isDisabled={cases.length === 0}
-            >
-              Export CSV
-            </Button>
-            <Button
-              leftIcon={<AddIcon />}
-              colorScheme="orange"
-              onClick={() => {
-                setNewCaseNumber('');
-                onOpen();
-              }}
-            >
-              Create New Case
-            </Button>
-          </HStack>
+          <Heading>Case Management</Heading>
+          <Button
+            leftIcon={<AddIcon />}
+            colorScheme="blue"
+            onClick={() => {
+              setNewCaseNumber('');
+              onOpen();
+            }}
+          >
+            Create Case
+          </Button>
         </HStack>
 
-        <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={6}>
-          {cases.map((case_) => (
-            <GridItem key={case_.id}>
-              <Box
-                p={6}
-                borderWidth={1}
-                borderRadius="lg"
-                bg={bgColor}
-                borderColor={borderColor}
-                _hover={{
-                  transform: 'translateY(-2px)',
-                  boxShadow: 'lg',
-                  transition: 'all 0.2s',
-                }}
-              >
-                <VStack align="stretch" spacing={4}>
-                  <HStack justify="space-between">
-                    <Text fontSize="xl" fontWeight="bold">
-                      Case {case_.caseNumber}
+        {isLoading ? (
+          <Text>Loading cases...</Text>
+        ) : cases && cases.length > 0 ? (
+          <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={4}>
+            {cases.map((case_) => (
+              <GridItem key={case_.id}>
+                <Box
+                  p={6}
+                  borderWidth={1}
+                  borderRadius="lg"
+                  bg={bgColor}
+                  borderColor={borderColor}
+                  _hover={{
+                    transform: 'translateY(-2px)',
+                    boxShadow: 'lg',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <VStack align="stretch" spacing={4}>
+                    <HStack justify="space-between">
+                      <Text fontSize="xl" fontWeight="bold">
+                        Case {case_.caseNumber}
+                      </Text>
+                      <Badge colorScheme={getStatusColor(case_.status)}>
+                        {case_.status}
+                      </Badge>
+                    </HStack>
+
+                    <Text color="gray.500">
+                      Created: {new Date(case_.createdAt).toLocaleDateString()}
                     </Text>
-                    <Badge colorScheme={getStatusColor(case_.status)}>
-                      {case_.status}
-                    </Badge>
-                  </HStack>
 
-                  <Text color="gray.500">
-                    Created: {new Date(case_.createdAt).toLocaleDateString()}
-                  </Text>
+                    <Text>
+                      Coins: {case_.coins?.length || 0}
+                    </Text>
 
-                  <Text>
-                    Coins: {case_.coins.length}
-                  </Text>
-
-                  <HStack spacing={2}>
-                    <Button
-                      size="sm"
-                      leftIcon={<ViewIcon />}
-                      onClick={() => handleViewCase(case_.id)}
-                      colorScheme="blue"
-                    >
-                      View Details
-                    </Button>
-                    <IconButton
-                      aria-label="Edit case"
-                      icon={<EditIcon />}
-                      size="sm"
-                      colorScheme="yellow"
-                      onClick={() => {
-                        setSelectedCase(case_);
-                        onOpen();
-                      }}
-                    />
-                    <IconButton
-                      aria-label="Delete case"
-                      icon={<DeleteIcon />}
-                      size="sm"
-                      colorScheme="red"
-                      onClick={() => {
-                        setSelectedCase(case_);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                    />
-                  </HStack>
-                </VStack>
-              </Box>
-            </GridItem>
-          ))}
-        </Grid>
+                    <HStack spacing={2}>
+                      <Button
+                        size="sm"
+                        leftIcon={<ViewIcon />}
+                        onClick={() => handleViewCase(case_.id)}
+                        colorScheme="blue"
+                      >
+                        View Details
+                      </Button>
+                      <IconButton
+                        aria-label="Edit case"
+                        icon={<EditIcon />}
+                        size="sm"
+                        colorScheme="yellow"
+                        onClick={() => {
+                          setSelectedCase(case_);
+                          onOpen();
+                        }}
+                      />
+                      <IconButton
+                        aria-label="Delete case"
+                        icon={<DeleteIcon />}
+                        size="sm"
+                        colorScheme="red"
+                        onClick={() => {
+                          setSelectedCase(case_);
+                          setIsDeleteDialogOpen(true);
+                        }}
+                      />
+                    </HStack>
+                  </VStack>
+                </Box>
+              </GridItem>
+            ))}
+          </Grid>
+        ) : (
+          <Text>No cases found. Create a new case to get started.</Text>
+        )}
       </VStack>
 
       {/* Create/Edit Case Modal */}
