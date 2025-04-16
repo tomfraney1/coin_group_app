@@ -196,19 +196,33 @@ const CaseDetails: React.FC = () => {
         throw new Error('Failed to enrich coin data');
       }
 
+      console.log('Enriched coin data:', enrichedData);
+
       // Add coin to case with just barcode and quantity
       const coin = await caseService.addCoinToCase(currentCase.id, {
         barcode: currentBarcode,
         quantity: currentQuantity
       });
       
-      // Update the current case with the new coin
+      console.log('Added coin to case:', coin);
+      
+      // Update the current case with the new coin from the API response
       setCurrentCase(prev => {
         if (!prev) return null;
-        return {
+        const updatedCase = {
           ...prev,
-          coins: [...prev.coins, coin]
+          coins: [...prev.coins, {
+            id: coin.id,
+            barcode: coin.barcode,
+            name: coin.name,
+            quantity: coin.quantity,
+            description: coin.description,
+            grade: coin.grade,
+            coinId: coin.coinId
+          }]
         };
+        console.log('Updated case:', updatedCase);
+        return updatedCase;
       });
 
       toast({

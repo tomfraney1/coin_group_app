@@ -2,10 +2,10 @@
 
 # Database connection parameters
 DB_HOST="localhost"
-DB_PORT="5433"
+DB_PORT="5432"
 DB_NAME="coingroup"
 DB_USER="coingroup"
-DB_PASSWORD="3KpFHS9mhap3Asur5XYt"
+DB_PASSWORD="coingroup123"
 
 # Run migrations
 for migration in migrations/*.sql; do

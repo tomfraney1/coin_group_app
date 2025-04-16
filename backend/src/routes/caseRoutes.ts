@@ -14,7 +14,18 @@ export const initializeCaseRoutes = (notificationService: CaseNotificationServic
       const cases = await caseService.getAllCases();
       res.json(cases);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error('Error in GET /cases:', {
+        message: error.message,
+        stack: error.stack,
+        code: error.code,
+        detail: error.detail,
+        hint: error.hint
+      });
+      res.status(500).json({ 
+        error: error.message,
+        detail: error.detail,
+        hint: error.hint
+      });
     }
   });
 

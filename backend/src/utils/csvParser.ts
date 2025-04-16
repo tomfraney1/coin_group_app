@@ -15,8 +15,13 @@ interface CsvCoinData {
 
 export function findCoinByBarcode(barcode: string): CsvCoinData | null {
   try {
-    const workspaceRoot = '/Users/tomfraney/coin_group_app';
-    const csvPath = path.join(workspaceRoot, 'frontend', 'public', 'data', 'product_database.csv');
+    const csvPath = process.env.CSV_FILE_PATH;
+    
+    if (!csvPath) {
+      console.error('CSV_FILE_PATH environment variable is not set');
+      return null;
+    }
+
     console.log('Looking for CSV file at:', csvPath);
     
     if (!fs.existsSync(csvPath)) {
@@ -24,13 +29,17 @@ export function findCoinByBarcode(barcode: string): CsvCoinData | null {
       return null;
     }
 
+    console.log('CSV file exists, attempting to read...');
     const fileContent = fs.readFileSync(csvPath, 'utf-8');
+    console.log('CSV file read successfully, first 100 characters:', fileContent.substring(0, 100));
+    
     const records: CsvCoinData[] = parse(fileContent, {
       columns: true,
       skip_empty_lines: true
     });
 
     console.log(`Loaded ${records.length} records from CSV`);
+    console.log('First record:', JSON.stringify(records[0]));
 
     // Get the last 7 digits of the barcode
     const lastSevenDigits = barcode.slice(-7);
@@ -44,6 +53,7 @@ export function findCoinByBarcode(barcode: string): CsvCoinData | null {
       }
       
       const certLastSeven = record.Certification_no.slice(-7);
+      console.log(`Comparing ${certLastSeven} with ${lastSevenDigits}`);
       const isMatch = certLastSeven === lastSevenDigits;
       
       if (isMatch) {
@@ -63,12 +73,17 @@ export function findCoinByBarcode(barcode: string): CsvCoinData | null {
       console.log('No matching coin found for barcode:', barcode);
       // Log a few sample certification numbers for debugging
       console.log('Sample certification numbers from first 5 records:', 
-        records.slice(0, 5).map(r => r.Certification_no));
+        records.slice(0, 5).map(r => ({ cert: r.Certification_no, coinId: r.Coin_id })));
     }
 
     return coin || null;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error reading or parsing CSV:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
     return null;
   }
 } 

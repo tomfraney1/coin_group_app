@@ -10,10 +10,10 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 const dbConfig = process.env.DATABASE_URL 
   ? parseDatabaseUrl(process.env.DATABASE_URL)
   : {
-      user: process.env.DB_USER || 'postgres',
+      user: process.env.DB_USER || 'coingroup',
       host: process.env.DB_HOST || '127.0.0.1',
       database: process.env.DB_NAME || 'coingroup',
-      password: process.env.DB_PASSWORD || 'postgres',
+      password: process.env.DB_PASSWORD || 'coingroup123',
       port: Number(process.env.DB_PORT) || 5432,
     };
 

@@ -1,7 +1,5 @@
 import { Case, CaseCoin, CaseHistory } from '../types/case';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+import { API_URL, WS_URL } from '../config';
 
 class CaseService {
   private ws: WebSocket | null = null;
@@ -30,7 +28,7 @@ class CaseService {
       this.ws?.send(JSON.stringify({ type: 'auth', token }));
     };
 
-    this.ws.onmessage = (event) => {
+    this.ws.onmessage = async (event) => {
       const data = JSON.parse(event.data);
       switch (data.type) {
         case 'case_created':
@@ -47,7 +45,20 @@ class CaseService {
         case 'coin_added':
           const caseData = this.cases.find(c => c.id === data.data.caseId);
           if (caseData) {
-            caseData.coins.push(data.data.coin);
+            console.log('Received coin_added event:', data);
+            console.log('Coin data:', data.data.coin);
+            // Map the coin data to match the CaseCoin interface
+            const mappedCoin = {
+              id: data.data.coin.id,
+              barcode: data.data.coin.barcode,
+              name: data.data.coin.name,
+              quantity: data.data.coin.quantity,
+              description: data.data.coin.description,
+              grade: data.data.coin.grade,
+              coinId: data.data.coin.coin_id || data.data.coin.coinId || '' // Try both possible field names
+            };
+            console.log('Mapped coin:', mappedCoin);
+            caseData.coins.push(mappedCoin);
             this.notifySubscribers();
           }
           break;
@@ -179,7 +190,8 @@ class CaseService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to add coin to case');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add coin to case');
       }
 
       return await response.json();

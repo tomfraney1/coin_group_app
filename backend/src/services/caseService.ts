@@ -1,8 +1,9 @@
 import { query, transaction } from '../utils/db';
 import { v4 as uuidv4 } from 'uuid';
 import { findCoinByBarcode } from '../utils/csvParser';
-import { Pool } from 'pg';
-import { enrichCoin } from '../services/coinEnrichmentService';
+import { Pool, PoolClient } from 'pg';
+import { enrichCoin } from './coinEnrichmentService';
+import pool from '../utils/db';
 
 export interface Case {
   id: string;
@@ -39,13 +40,7 @@ export class CaseService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({
-      user: process.env.DB_USER,
-      host: process.env.DB_HOST,
-      database: process.env.DB_NAME,
-      password: process.env.DB_PASSWORD,
-      port: parseInt(process.env.DB_PORT || '5432'),
-    });
+    this.pool = pool;
   }
 
   async createCase(caseNumber: string, userId: string): Promise<Case> {
@@ -164,23 +159,24 @@ export class CaseService {
       
       const result = await client.query(
         `INSERT INTO case_coins (
-          case_id, 
-          barcode, 
-          quantity, 
-          coin_id, 
-          grade, 
+          case_id,
+          coin_id,
+          name,
+          grade,
+          quantity,
           description,
-          name
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7) 
+          barcode,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP) 
         RETURNING *`,
         [
           caseId,
-          coinData.barcode,
-          coinData.quantity,
           enrichedCoin.coinId,
+          coinData.name || enrichedCoin.description,
           enrichedCoin.grade,
+          coinData.quantity,
           enrichedCoin.description,
-          coinData.name || enrichedCoin.description
+          coinData.barcode
         ]
       );
 
@@ -188,7 +184,10 @@ export class CaseService {
       return result.rows[0];
     } catch (error) {
       await client.query('ROLLBACK');
+      console.error('Error adding coin to case:', error);
       throw error;
+    } finally {
+      client.release();
     }
   }
 
