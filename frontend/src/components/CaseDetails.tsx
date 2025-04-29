@@ -40,7 +40,7 @@ import {
   NumberDecrementStepper,
   Flex,
 } from '@chakra-ui/react';
-import { DeleteIcon, ArrowUpIcon, ArrowDownIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
+import { DeleteIcon, ArrowUpIcon, ArrowDownIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon, AttachmentIcon } from '@chakra-ui/icons';
 import { Case, CaseCoin } from '../types/case';
 import { caseService } from '../services/caseService';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -69,6 +69,8 @@ const CaseDetails: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [availableCases, setAvailableCases] = useState<Case[]>([]);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [isProcessingCsv, setIsProcessingCsv] = useState(false);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -196,19 +198,33 @@ const CaseDetails: React.FC = () => {
         throw new Error('Failed to enrich coin data');
       }
 
+      console.log('Enriched coin data:', enrichedData);
+
       // Add coin to case with just barcode and quantity
       const coin = await caseService.addCoinToCase(currentCase.id, {
         barcode: currentBarcode,
         quantity: currentQuantity
       });
       
-      // Update the current case with the new coin
+      console.log('Added coin to case:', coin);
+      
+      // Update the current case with the new coin from the API response
       setCurrentCase(prev => {
         if (!prev) return null;
-        return {
+        const updatedCase = {
           ...prev,
-          coins: [...prev.coins, coin]
+          coins: [...prev.coins, {
+            id: coin.id,
+            barcode: coin.barcode,
+            name: coin.name,
+            quantity: coin.quantity,
+            description: coin.description,
+            grade: coin.grade,
+            coinId: coin.coinId
+          }]
         };
+        console.log('Updated case:', updatedCase);
+        return updatedCase;
       });
 
       toast({
@@ -362,6 +378,96 @@ const CaseDetails: React.FC = () => {
     link.click();
   };
 
+  const handleCsvUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setCsvFile(file);
+    setIsProcessingCsv(true);
+
+    try {
+      const text = await file.text();
+      const rows = text.split('\n');
+      const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Validate required headers
+      const requiredHeaders = ['barcode', 'quantity'];
+      const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+      if (missingHeaders.length > 0) {
+        throw new Error(`Missing required headers: ${missingHeaders.join(', ')}`);
+      }
+
+      // Get column indices
+      const barcodeIndex = headers.indexOf('barcode');
+      const quantityIndex = headers.indexOf('quantity');
+      const descriptionIndex = headers.indexOf('description');
+      const coinIdIndex = headers.indexOf('coinid');
+      
+      // Process each row (skip header)
+      for (let i = 1; i < rows.length; i++) {
+        const values = rows[i].split(',');
+        if (values.length < 2) continue; // Skip empty rows
+
+        const barcode = values[barcodeIndex].trim();
+        const quantity = parseInt(values[quantityIndex].trim(), 10) || 1;
+        const description = descriptionIndex >= 0 ? values[descriptionIndex].trim() : undefined;
+        const coinId = coinIdIndex >= 0 ? values[coinIdIndex].trim() : undefined;
+
+        if (!barcode) continue;
+
+        try {
+          // Add coin to case with optional fields
+          const coin = await caseService.addCoinToCase(currentCase!.id, { 
+            barcode, 
+            quantity,
+            ...(description && { description }),
+            ...(coinId && { coinId })
+          });
+          
+          // Update the current case with the new coin
+          setCurrentCase(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              coins: [...prev.coins, coin]
+            };
+          });
+
+          toast({
+            title: 'Coin added',
+            description: `Added ${quantity} coins with barcode ${barcode}`,
+            status: 'success',
+            duration: 1000,
+            isClosable: true,
+          });
+        } catch (error) {
+          console.error(`Error adding coin ${barcode}:`, error);
+          toast({
+            title: 'Error adding coin',
+            description: `Failed to add coin with barcode ${barcode}`,
+            status: 'error',
+            duration: 2000,
+            isClosable: true,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error processing CSV:', error);
+      toast({
+        title: 'Error processing CSV',
+        description: error instanceof Error ? error.message : 'Failed to process the uploaded CSV file',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsProcessingCsv(false);
+      setCsvFile(null);
+      // Clear the file input
+      event.target.value = '';
+    }
+  };
+
   // Sort history by timestamp in descending order (most recent first)
   const sortedHistory = currentCase ? [...currentCase.history].sort((a, b) => 
     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
@@ -457,14 +563,31 @@ const CaseDetails: React.FC = () => {
                   </NumberInputStepper>
                 </NumberInput>
               </FormControl>
-              <Button
-                colorScheme="blue"
-                width="full"
-                onClick={handleScanSubmit}
-                isLoading={scanQueue.length > 0}
-              >
-                {scanQueue.length > 0 ? `Processing ${scanQueue.length} coins...` : 'Add Coin'}
-              </Button>
+              <HStack width="full" spacing={4}>
+                <Button
+                  colorScheme="blue"
+                  flex={1}
+                  onClick={handleScanSubmit}
+                  isLoading={scanQueue.length > 0}
+                >
+                  {scanQueue.length > 0 ? `Processing ${scanQueue.length} coins...` : 'Add Coin'}
+                </Button>
+                <Button
+                  as="label"
+                  colorScheme="green"
+                  flex={1}
+                  leftIcon={<AttachmentIcon />}
+                  isLoading={isProcessingCsv}
+                >
+                  Upload CSV
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleCsvUpload}
+                    style={{ display: 'none' }}
+                  />
+                </Button>
+              </HStack>
               <Text color="gray.500" fontSize="sm">
                 {scanQueue.length > 0 ? `Processing ${scanQueue.length} coins...` : 'Ready to scan'}
               </Text>

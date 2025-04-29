@@ -26,7 +26,12 @@ class ApiService {
 
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
-      console.log('Adding token to headers:', { token: this.token.substring(0, 10) + '...' });
+      console.log('Request Headers:', {
+        hasToken: true,
+        tokenLength: this.token.length,
+        tokenPrefix: this.token.substring(0, 10) + '...',
+        fullHeaders: headers
+      });
     } else {
       console.log('No token available for headers');
     }

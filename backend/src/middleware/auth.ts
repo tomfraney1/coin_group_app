@@ -15,6 +15,8 @@ declare global {
 
 export const authenticateToken: RequestHandler = (req, res, next) => {
   console.log('Auth middleware - Request headers:', req.headers);
+  console.log('Auth middleware - Request path:', req.path);
+  console.log('Auth middleware - Request method:', req.method);
   
   const authHeader = req.headers['authorization'];
   console.log('Auth header:', authHeader);
@@ -45,7 +47,12 @@ export const authenticateToken: RequestHandler = (req, res, next) => {
   // Only attempt JWT verification if it's not a development token
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-    console.log('Decoded token:', { userId: decoded.userId, role: decoded.role });
+    console.log('Decoded token:', { 
+      userId: decoded.userId, 
+      role: decoded.role,
+      exp: decoded.exp,
+      iat: decoded.iat
+    });
     req.user = {
       userId: decoded.userId,
       role: decoded.role

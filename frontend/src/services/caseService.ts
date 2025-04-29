@@ -1,7 +1,5 @@
-import { Case, CaseCoin, CaseHistory } from '../types/case';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+import { Case, CaseCoin, CaseHistory, StockTakeResult } from '../types/case';
+import { API_URL, WS_URL } from '../config';
 
 class CaseService {
   private ws: WebSocket | null = null;
@@ -22,6 +20,7 @@ class CaseService {
 
   private connectWebSocket() {
     const token = localStorage.getItem('token');
+    console.log('Connecting to WebSocket with token:', token);
     this.ws = new WebSocket(WS_URL);
 
     this.ws.onopen = () => {
@@ -30,14 +29,17 @@ class CaseService {
       this.ws?.send(JSON.stringify({ type: 'auth', token }));
     };
 
-    this.ws.onmessage = (event) => {
+    this.ws.onmessage = async (event) => {
+      console.log('WebSocket message received:', event.data);
       const data = JSON.parse(event.data);
       switch (data.type) {
         case 'case_created':
+          console.log('Case created:', data.data);
           this.cases.push(data.data);
           this.notifySubscribers();
           break;
         case 'case_updated':
+          console.log('Case updated:', data.data);
           const index = this.cases.findIndex(c => c.id === data.data.id);
           if (index !== -1) {
             this.cases[index] = data.data;
@@ -45,13 +47,27 @@ class CaseService {
           }
           break;
         case 'coin_added':
+          console.log('Coin added:', data.data);
           const caseData = this.cases.find(c => c.id === data.data.caseId);
           if (caseData) {
-            caseData.coins.push(data.data.coin);
+            console.log('Found case for coin:', caseData);
+            // Map the coin data to match the CaseCoin interface
+            const mappedCoin = {
+              id: data.data.coin.id,
+              barcode: data.data.coin.barcode,
+              name: data.data.coin.name,
+              quantity: data.data.coin.quantity,
+              description: data.data.coin.description,
+              grade: data.data.coin.grade,
+              coinId: data.data.coin.coin_id || data.data.coin.coinId || '' // Try both possible field names
+            };
+            console.log('Mapped coin:', mappedCoin);
+            caseData.coins.push(mappedCoin);
             this.notifySubscribers();
           }
           break;
         case 'coin_removed':
+          console.log('Coin removed:', data.data);
           const caseToUpdate = this.cases.find(c => c.id === data.data.caseId);
           if (caseToUpdate) {
             caseToUpdate.coins = caseToUpdate.coins.filter(c => c.barcode !== data.data.barcode);
@@ -59,6 +75,7 @@ class CaseService {
           }
           break;
         case 'coin_moved':
+          console.log('Coin moved:', data.data);
           const fromCase = this.cases.find(c => c.id === data.data.fromCaseId);
           const toCase = this.cases.find(c => c.id === data.data.toCaseId);
           if (fromCase) {
@@ -179,7 +196,8 @@ class CaseService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to add coin to case');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add coin to case');
       }
 
       return await response.json();
@@ -246,6 +264,52 @@ class CaseService {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
+    }
+  }
+
+  public async getStockTakeResults(): Promise<StockTakeResult[]> {
+    try {
+      console.log('Fetching stock take results...');
+      const response = await fetch(`${API_URL}/stock-take`, {
+        headers: await this.getAuthHeaders()
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error data:', errorData);
+        throw new Error(errorData.message || 'Failed to fetch stock take results');
+      }
+
+      const results = await response.json();
+      console.log('Stock take results:', results);
+      return results;
+    } catch (error) {
+      console.error('Error fetching stock take results:', error);
+      throw error;
+    }
+  }
+
+  public async addStockTakeResult(result: StockTakeResult): Promise<StockTakeResult> {
+    try {
+      console.log('Adding stock take result:', result);
+      const response = await fetch(`${API_URL}/stock-take`, {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(result)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error data:', errorData);
+        throw new Error(errorData.message || 'Failed to add stock take result');
+      }
+
+      const newResult = await response.json();
+      console.log('Added stock take result:', newResult);
+      return newResult;
+    } catch (error) {
+      console.error('Error adding stock take result:', error);
+      throw error;
     }
   }
 }

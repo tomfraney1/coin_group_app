@@ -1,8 +1,9 @@
 import { query, transaction } from '../utils/db';
 import { v4 as uuidv4 } from 'uuid';
 import { findCoinByBarcode } from '../utils/csvParser';
-import { Pool } from 'pg';
-import { enrichCoin } from '../services/coinEnrichmentService';
+import { Pool, PoolClient } from 'pg';
+import { enrichCoin } from './coinEnrichmentService';
+import pool from '../utils/db';
 
 export interface Case {
   id: string;
@@ -35,17 +36,20 @@ export interface CaseHistory {
   timestamp: Date;
 }
 
+export interface StockTakeResult {
+  id: string;
+  caseId: string;
+  performedAt: Date;
+  performedBy: string;
+  discrepancies: any[];
+  notes: string;
+}
+
 export class CaseService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({
-      user: process.env.DB_USER,
-      host: process.env.DB_HOST,
-      database: process.env.DB_NAME,
-      password: process.env.DB_PASSWORD,
-      port: parseInt(process.env.DB_PORT || '5432'),
-    });
+    this.pool = pool;
   }
 
   async createCase(caseNumber: string, userId: string): Promise<Case> {
@@ -164,23 +168,24 @@ export class CaseService {
       
       const result = await client.query(
         `INSERT INTO case_coins (
-          case_id, 
-          barcode, 
-          quantity, 
-          coin_id, 
-          grade, 
+          case_id,
+          coin_id,
+          name,
+          grade,
+          quantity,
           description,
-          name
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7) 
+          barcode,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP) 
         RETURNING *`,
         [
           caseId,
-          coinData.barcode,
-          coinData.quantity,
           enrichedCoin.coinId,
+          coinData.name || enrichedCoin.description,
           enrichedCoin.grade,
+          coinData.quantity,
           enrichedCoin.description,
-          coinData.name || enrichedCoin.description
+          coinData.barcode
         ]
       );
 
@@ -188,7 +193,10 @@ export class CaseService {
       return result.rows[0];
     } catch (error) {
       await client.query('ROLLBACK');
+      console.error('Error adding coin to case:', error);
       throw error;
+    } finally {
+      client.release();
     }
   }
 
@@ -362,5 +370,99 @@ export class CaseService {
         [caseId]
       );
     });
+  }
+
+  async decrementCoinQuantity(barcode: string, decrementAmount: number): Promise<{ success: boolean; message: string; newQuantity: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Find the case and coin
+      const coinResult = await client.query(
+        `SELECT cc.*, c.status as case_status
+         FROM case_coins cc
+         JOIN cases c ON cc.case_id = c.id
+         WHERE cc.barcode = $1`,
+        [barcode]
+      );
+
+      if (coinResult.rows.length === 0) {
+        throw new Error('Coin not found in any case');
+      }
+
+      const coin = coinResult.rows[0];
+      
+      if (coin.case_status !== 'open') {
+        throw new Error('Cannot modify coins in a closed case');
+      }
+
+      // Calculate new quantity
+      const newQuantity = coin.quantity - decrementAmount;
+
+      // Update the quantity
+      await client.query(
+        `UPDATE case_coins 
+         SET quantity = $1
+         WHERE barcode = $2`,
+        [newQuantity, barcode]
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        message: newQuantity < 0 ? 'Warning: Quantity is now negative' : 'Quantity updated successfully',
+        newQuantity
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error decrementing coin quantity:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getStockTakeResults(): Promise<StockTakeResult[]> {
+    const result = await query(
+      `SELECT * FROM stock_take_results ORDER BY performed_at DESC`
+    );
+    return result.rows.map(row => ({
+      id: row.id,
+      caseId: row.case_id,
+      performedAt: row.performed_at,
+      performedBy: row.performed_by,
+      discrepancies: row.discrepancies,
+      notes: row.notes
+    }));
+  }
+
+  async addStockTakeResult(stockTakeResult: StockTakeResult): Promise<StockTakeResult> {
+    const result = await query(
+      `INSERT INTO stock_take_results (
+        case_id,
+        performed_at,
+        performed_by,
+        discrepancies,
+        notes
+      ) VALUES ($1, $2, $3, $4, $5)
+      RETURNING *`,
+      [
+        stockTakeResult.caseId,
+        stockTakeResult.performedAt,
+        stockTakeResult.performedBy,
+        JSON.stringify(stockTakeResult.discrepancies),
+        stockTakeResult.notes
+      ]
+    );
+
+    return {
+      id: result.rows[0].id,
+      caseId: result.rows[0].case_id,
+      performedAt: result.rows[0].performed_at,
+      performedBy: result.rows[0].performed_by,
+      discrepancies: result.rows[0].discrepancies,
+      notes: result.rows[0].notes
+    };
   }
 } 

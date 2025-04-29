@@ -8,13 +8,46 @@ const router = Router();
 const caseService = new CaseService();
 
 export const initializeCaseRoutes = (notificationService: CaseNotificationService) => {
+  // Public decrement coin quantity (no authentication required)
+  router.post('/coins/decrement/public', async (req, res) => {
+    try {
+      const { barcode, decrementAmount } = req.body;
+      
+      if (!barcode || decrementAmount === undefined) {
+        return res.status(400).json({ error: 'Barcode and decrement amount are required' });
+      }
+
+      const result = await caseService.decrementCoinQuantity(barcode, decrementAmount);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message === 'Coin not found in any case') {
+        res.status(404).json({ error: error.message });
+      } else if (error.message === 'Cannot modify coins in a closed case') {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  });
+
   // Get all cases
   router.get('/', authenticateToken, async (req, res) => {
     try {
       const cases = await caseService.getAllCases();
       res.json(cases);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error('Error in GET /cases:', {
+        message: error.message,
+        stack: error.stack,
+        code: error.code,
+        detail: error.detail,
+        hint: error.hint
+      });
+      res.status(500).json({ 
+        error: error.message,
+        detail: error.detail,
+        hint: error.hint
+      });
     }
   });
 
@@ -82,13 +115,12 @@ export const initializeCaseRoutes = (notificationService: CaseNotificationServic
         return res.status(400).json({ error: 'Barcode is required' });
       }
 
-      // Get enriched coin data
+      // Get enriched coin data - this will now work even if coin is not in database
       const enrichedData = await enrichCoin(barcode);
-      const coinName = enrichedData?.description || `Coin ${barcode}`;
 
       const coin = await caseService.addCoinToCase(req.params.id, {
-        barcode,
-        name: coinName,
+        barcode, // Keep original barcode exactly as scanned
+        name: enrichedData.description,
         quantity: quantity || 1
       });
 
@@ -139,6 +171,28 @@ export const initializeCaseRoutes = (notificationService: CaseNotificationServic
     } catch (error: any) {
       if (error.message === 'Case not found') {
         res.status(404).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  });
+
+  // Decrement coin quantity
+  router.post('/coins/decrement', authenticateToken, async (req, res) => {
+    try {
+      const { barcode, decrementAmount } = req.body;
+      
+      if (!barcode || decrementAmount === undefined) {
+        return res.status(400).json({ error: 'Barcode and decrement amount are required' });
+      }
+
+      const result = await caseService.decrementCoinQuantity(barcode, decrementAmount);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message === 'Coin not found in any case') {
+        res.status(404).json({ error: error.message });
+      } else if (error.message === 'Cannot modify coins in a closed case') {
+        res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: error.message });
       }

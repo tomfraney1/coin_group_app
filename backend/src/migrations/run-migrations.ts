@@ -9,8 +9,8 @@ const pool = new Pool({
   user: process.env.DB_USER || 'coingroup',
   host: process.env.DB_HOST || 'localhost',
   database: process.env.DB_NAME || 'coingroup',
-  password: process.env.DB_PASSWORD || '3KpFHS9mhap3Asur5XYt',
-  port: Number(process.env.DB_PORT) || 5433,
+  password: process.env.DB_PASSWORD || 'coingroup123',
+  port: Number(process.env.DB_PORT) || 5432,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
 });
 

@@ -98,6 +98,9 @@ export const enrichCoinData = async (barcode: string): Promise<Partial<CoinData[
   
   // Find matching coin in CSV data using last 7 digits of certification number
   const matchingCoin = csvData.find(coin => {
+    if (!coin.Certification_no) {
+      return false;
+    }
     const certLastSeven = coin.Certification_no.slice(-7);
     console.log('Comparing certification numbers:', {
       barcodeLastSeven: lastSevenDigits,
@@ -108,7 +111,16 @@ export const enrichCoinData = async (barcode: string): Promise<Partial<CoinData[
   });
 
   if (!matchingCoin) {
-    throw new Error('Coin not found in product database');
+    // Return default values for coins not found in the database
+    return {
+      coinId: '', // Empty string for unknown coins
+      description: 'Unknown Coin',
+      grade: '', // Empty string for unknown grade
+      quantity: 1,
+      certificationNumber: barcode,
+      gradingService: 'Unknown',
+      type: 'Unknown'
+    };
   }
 
   console.log('Found matching coin in product database:', {

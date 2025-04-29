@@ -5,8 +5,10 @@ import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import coinLocationRoutes from './routes/coinLocationRoutes';
 import { initializeCaseRoutes } from './routes/caseRoutes';
+import publicRoutes from './routes/publicRoutes';
 import CaseNotificationService from './websocket/caseNotifications';
 import { connectDB } from './config/database';
+import stockTakeRoutes from './routes/stockTakeRoutes';
 
 const app = express();
 const port = Number(process.env.PORT) || 8080;
@@ -45,6 +47,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/coin-locations', coinLocationRoutes);
 app.use('/api/cases', initializeCaseRoutes(caseNotificationService));
+app.use('/api/public', publicRoutes);
+app.use('/api/stock-take', stockTakeRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

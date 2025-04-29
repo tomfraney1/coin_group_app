@@ -1,24 +1,30 @@
 import express from 'express';
 import cors from 'cors';
-import authRoutes from './routes/authRoutes';
-import userRoutes from './routes/userRoutes';
-import coinScannerRoutes from './routes/coinScannerRoutes';
-import caseRoutes from './routes/caseRoutes';
+import { initializeCaseRoutes } from './routes/caseRoutes';
+import publicRoutes from './routes/publicRoutes';
 import stockTakeRoutes from './routes/stockTakeRoutes';
 import spotPriceRoutes from './routes/spotPriceRoutes';
+import CaseNotificationService from './websocket/caseNotifications';
 import { connectDB } from './config/database';
 import { createSpotPriceTable } from './models/spotPrice';
 
 const app = express();
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
+// Create server
+const server = app.listen(3000, () => {
+  console.log('Server is running on port 3000');
+});
+
+// Create notification service
+const notificationService = new CaseNotificationService(server);
+
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/coin-scanner', coinScannerRoutes);
-app.use('/api/cases', caseRoutes);
+app.use('/api/cases', initializeCaseRoutes(notificationService));
+app.use('/api/public', publicRoutes);
 app.use('/api/stock-take', stockTakeRoutes);
 app.use('/api/spot-price', spotPriceRoutes);
 

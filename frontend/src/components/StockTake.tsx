@@ -35,20 +35,30 @@ import {
   AlertDialogOverlay,
   Grid,
   GridItem,
+  Progress,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  IconButton,
+  Tooltip,
 } from '@chakra-ui/react';
 import { Case, CaseCoin, StockTakeResult } from '../types/case';
 import { caseService } from '../services/caseService';
 import { enrichCoin } from '../utils/coinEnrichment';
+import { DeleteIcon } from '@chakra-ui/icons';
 
 const StockTake: React.FC = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [barcode, setBarcode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [scannedCoins, setScannedCoins] = useState<{ [key: string]: number }>({});
+  const [scannedCoins, setScannedCoins] = useState<{ [key: string]: { quantity: number; timestamp: number } }>({});
   const [notes, setNotes] = useState('');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedResult, setSelectedResult] = useState<StockTakeResult | null>(null);
+  const [historicalResults, setHistoricalResults] = useState<StockTakeResult[]>([]);
   const cancelRef = React.useRef<HTMLButtonElement>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
@@ -65,14 +75,52 @@ const StockTake: React.FC = () => {
     const unsubscribe = caseService.subscribe((newCases) => {
       setCases(newCases);
     });
+    
     // Get initial cases
-    setCases(caseService.getCases());
+    caseService.getCases().then(cases => {
+      setCases(cases);
+    }).catch(error => {
+      toast({
+        title: 'Error loading cases',
+        description: error instanceof Error ? error.message : 'Failed to load cases',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    });
+    
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (selectedCase) {
+      // Load historical results for the selected case
+      caseService.getStockTakeResults()
+        .then(results => {
+          const filteredResults = results.filter((r: StockTakeResult) => r.caseId === selectedCase.id);
+          setHistoricalResults(filteredResults);
+        })
+        .catch(error => {
+          toast({
+            title: 'Error loading historical results',
+            description: error instanceof Error ? error.message : 'Failed to load historical results',
+            status: 'error',
+            duration: 3000,
+            isClosable: true,
+          });
+        });
+    }
+  }, [selectedCase]);
+
   const handleCaseSelect = (caseId: string) => {
-    const selectedCase = cases.find(c => c.id === caseId);
-    if (!selectedCase) return;
+    console.log('Case selected:', caseId);
+    console.log('Available cases:', cases);
+    const selectedCase = cases.find(c => c.id.toString() === caseId);
+    console.log('Found case:', selectedCase);
+    if (!selectedCase) {
+      console.log('Case not found');
+      return;
+    }
 
     setSelectedCase(selectedCase);
     setScannedCoins({});
@@ -107,10 +155,13 @@ const StockTake: React.FC = () => {
         return;
       }
 
-      // Update scanned count
+      // Update scanned count with timestamp
       setScannedCoins(prev => ({
         ...prev,
-        [coin.id]: (prev[coin.id] || 0) + 1
+        [coin.id]: {
+          quantity: (prev[coin.id]?.quantity || 0) + 1,
+          timestamp: now
+        }
       }));
 
       // Show a quick success toast
@@ -136,14 +187,32 @@ const StockTake: React.FC = () => {
     }
   };
 
+  const handleQuantityChange = (coinId: string, newQuantity: number) => {
+    setScannedCoins(prev => ({
+      ...prev,
+      [coinId]: {
+        ...prev[coinId],
+        quantity: newQuantity
+      }
+    }));
+  };
+
+  const handleRemoveScan = (coinId: string) => {
+    setScannedCoins(prev => {
+      const newScannedCoins = { ...prev };
+      delete newScannedCoins[coinId];
+      return newScannedCoins;
+    });
+  };
+
   const handleSubmitStockTake = () => {
     if (!selectedCase) return;
 
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const discrepancies = selectedCase.coins.map(coin => ({
       coinId: coin.id,
-      expected: 1, // Expected count is always 1
-      actual: scannedCoins[coin.id] || 0
+      expected: coin.quantity,
+      actual: scannedCoins[coin.id]?.quantity || 0
     })).filter(disc => disc.expected !== disc.actual);
 
     const result: StockTakeResult = {
@@ -155,34 +224,71 @@ const StockTake: React.FC = () => {
       notes
     };
 
-    caseService.addStockTakeResult(result);
-    toast({
-      title: 'Stock take completed',
-      description: `Stock take for Case ${selectedCase.caseNumber} has been completed`,
-      status: 'success',
-      duration: 3000,
-      isClosable: true,
-    });
+    caseService.addStockTakeResult(result)
+      .then(() => {
+        toast({
+          title: 'Stock take completed',
+          description: `Stock take for Case ${selectedCase.caseNumber} has been completed`,
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
 
-    // Reset form
-    setSelectedCase(null);
-    setScannedCoins({});
-    setNotes('');
-    setBarcode('');
+        // Reset form
+        setSelectedCase(null);
+        setScannedCoins({});
+        setNotes('');
+        setBarcode('');
+      })
+      .catch(error => {
+        toast({
+          title: 'Error submitting stock take',
+          description: error instanceof Error ? error.message : 'Failed to submit stock take',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      });
   };
 
-  const handleDeleteResult = () => {
-    if (!selectedResult) return;
+  const handleExportCSV = () => {
+    if (!selectedCase) return;
 
-    // TODO: Implement result deletion in the service
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: 'Result deleted',
-      description: 'The stock take result has been deleted',
-      status: 'success',
-      duration: 3000,
-      isClosable: true,
+    const headers = ['Barcode', 'Coin ID', 'Description', 'Expected Quantity', 'Actual Quantity', 'Status'];
+    const rows = selectedCase.coins.map(coin => {
+      const scannedQuantity = scannedCoins[coin.id]?.quantity || 0;
+      const status = scannedQuantity === coin.quantity ? 'Match' : 'Discrepancy';
+      return [
+        coin.barcode,
+        coin.coinId,
+        coin.name,
+        coin.quantity,
+        scannedQuantity,
+        status
+      ];
     });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `stock_take_case_${selectedCase.caseNumber}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getProgress = () => {
+    if (!selectedCase) return 0;
+    const totalCoins = selectedCase.coins.length;
+    const scannedCoinsCount = Object.keys(scannedCoins).length;
+    return (scannedCoinsCount / totalCoins) * 100;
   };
 
   const getDiscrepancyColor = (expected: number, actual: number) => {
@@ -238,6 +344,12 @@ const StockTake: React.FC = () => {
                 </Badge>
               </HStack>
 
+              {/* Progress Bar */}
+              <Box>
+                <Text mb={2}>Progress: {Math.round(getProgress())}%</Text>
+                <Progress value={getProgress()} colorScheme="green" size="sm" />
+              </Box>
+
               {/* Updated Scanning Interface */}
               <form onSubmit={handleScan}>
                 <VStack spacing={4}>
@@ -245,11 +357,11 @@ const StockTake: React.FC = () => {
                     <FormLabel>Scan Coins</FormLabel>
                     <Input
                       value={barcode}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setBarcode(value);
-                        // Auto-submit when barcode is complete (assuming barcodes are a fixed length)
-                        if (value.length >= 10) { // Adjust this length based on your barcode format
+                      onChange={(e) => setBarcode(e.target.value)}
+                      onKeyPress={(e) => {
+                        // Auto-submit when common barcode scanner terminators are detected
+                        if (['Enter', 'Tab', ' '].includes(e.key)) {
+                          e.preventDefault(); // Prevent default behavior of the key
                           handleScan(e as any);
                         }
                       }}
@@ -269,24 +381,55 @@ const StockTake: React.FC = () => {
                     <Th>Expected</Th>
                     <Th>Scanned</Th>
                     <Th>Status</Th>
+                    <Th>Actions</Th>
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {selectedCase.coins.map((coin) => (
-                    <Tr key={coin.id}>
-                      <Td>{coin.barcode}</Td>
-                      <Td>{coin.name}</Td>
-                      <Td>1</Td>
-                      <Td>{scannedCoins[coin.id] || 0}</Td>
-                      <Td>
-                        <Badge
-                          colorScheme={getDiscrepancyColor(1, scannedCoins[coin.id] || 0)}
-                        >
-                          {1 === (scannedCoins[coin.id] || 0) ? 'Match' : 'Discrepancy'}
-                        </Badge>
-                      </Td>
-                    </Tr>
-                  ))}
+                  {selectedCase.coins.map((coin) => {
+                    const scannedQuantity = scannedCoins[coin.id]?.quantity || 0;
+                    const isScanned = scannedQuantity > 0;
+                    return (
+                      <Tr key={coin.id} bg={isScanned ? 'green.50' : 'red.50'}>
+                        <Td>{coin.barcode}</Td>
+                        <Td>{coin.name}</Td>
+                        <Td>{coin.quantity}</Td>
+                        <Td>
+                          <NumberInput
+                            min={0}
+                            value={scannedQuantity}
+                            onChange={(value) => handleQuantityChange(coin.id, Number(value))}
+                            size="sm"
+                            width="100px"
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                        </Td>
+                        <Td>
+                          <Badge
+                            colorScheme={getDiscrepancyColor(coin.quantity, scannedQuantity)}
+                          >
+                            {coin.quantity === scannedQuantity ? 'Match' : 'Discrepancy'}
+                          </Badge>
+                        </Td>
+                        <Td>
+                          <Tooltip label="Remove scan">
+                            <IconButton
+                              aria-label="Remove scan"
+                              icon={<DeleteIcon />}
+                              size="sm"
+                              colorScheme="red"
+                              variant="ghost"
+                              onClick={() => handleRemoveScan(coin.id)}
+                            />
+                          </Tooltip>
+                        </Td>
+                      </Tr>
+                    );
+                  })}
                 </Tbody>
               </Table>
 
@@ -300,66 +443,81 @@ const StockTake: React.FC = () => {
                 />
               </FormControl>
 
-              <Button
-                colorScheme="orange"
-                onClick={handleSubmitStockTake}
-                size="lg"
-                isDisabled={Object.keys(scannedCoins).length === 0}
-              >
-                Submit Stock Take
-              </Button>
+              <HStack spacing={4}>
+                <Button
+                  colorScheme="orange"
+                  onClick={handleSubmitStockTake}
+                  size="lg"
+                  isDisabled={Object.keys(scannedCoins).length === 0}
+                >
+                  Submit Stock Take
+                </Button>
+                <Button
+                  colorScheme="blue"
+                  onClick={handleExportCSV}
+                  size="lg"
+                >
+                  Export to CSV
+                </Button>
+              </HStack>
             </VStack>
           </Box>
         )}
 
-        {/* Recent Results */}
-        <Box
-          p={6}
-          borderWidth={1}
-          borderRadius="lg"
-          bg={bgColor}
-          borderColor={borderColor}
-        >
-          <VStack spacing={4} align="stretch">
-            <Heading size="md">Recent Stock Takes</Heading>
-            <Table variant="simple">
-              <Thead>
-                <Tr>
-                  <Th>Case</Th>
-                  <Th>Performed By</Th>
-                  <Th>Date</Th>
-                  <Th>Discrepancies</Th>
-                  <Th>Actions</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {caseService.getStockTakeResults().map((result) => (
-                  <Tr key={result.id}>
-                    <Td>Case {cases.find(c => c.id === result.caseId)?.caseNumber}</Td>
-                    <Td>{result.performedBy}</Td>
-                    <Td>{new Date(result.performedAt).toLocaleString()}</Td>
-                    <Td>
-                      <Badge colorScheme={result.discrepancies.length === 0 ? 'green' : 'red'}>
-                        {result.discrepancies.length} discrepancies
-                      </Badge>
-                    </Td>
-                    <Td>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setSelectedResult(result);
-                          onOpen();
-                        }}
-                      >
-                        View Details
-                      </Button>
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          </VStack>
-        </Box>
+        {/* Historical Results */}
+        {selectedCase && (
+          <Box
+            p={6}
+            borderWidth={1}
+            borderRadius="lg"
+            bg={bgColor}
+            borderColor={borderColor}
+          >
+            <VStack spacing={4} align="stretch">
+              <Heading size="md">Historical Stock Takes</Heading>
+              {historicalResults.length > 0 ? (
+                <Table variant="simple">
+                  <Thead>
+                    <Tr>
+                      <Th>Date</Th>
+                      <Th>Performed By</Th>
+                      <Th>Discrepancies</Th>
+                      <Th>Actions</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {historicalResults.map((result) => (
+                      <Tr key={result.id}>
+                        <Td>{new Date(result.performedAt).toLocaleString()}</Td>
+                        <Td>{result.performedBy}</Td>
+                        <Td>
+                          <Badge colorScheme={result.discrepancies.length === 0 ? 'green' : 'red'}>
+                            {result.discrepancies.length} discrepancies
+                          </Badge>
+                        </Td>
+                        <Td>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setSelectedResult(result);
+                              onOpen();
+                            }}
+                          >
+                            View Details
+                          </Button>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              ) : (
+                <Text color="gray.500" textAlign="center" py={4}>
+                  No historical stock takes found for this case
+                </Text>
+              )}
+            </VStack>
+          </Box>
+        )}
       </VStack>
 
       {/* Result Details Modal */}
@@ -399,31 +557,57 @@ const StockTake: React.FC = () => {
 
                 {selectedResult.discrepancies.length > 0 && (
                   <Box>
-                    <Text fontWeight="bold" mb={2}>Discrepancy Details</Text>
-                    <Table variant="simple" size="sm">
+                    <HStack justify="space-between" mb={4}>
+                      <Text fontWeight="bold">Discrepancies</Text>
+                      <Button
+                        size="sm"
+                        colorScheme="blue"
+                        onClick={() => {
+                          const headers = ['Barcode', 'Expected', 'Actual'];
+                          const rows = selectedResult.discrepancies.map((disc) => {
+                            const coin = selectedCase?.coins.find(c => c.id === disc.coinId);
+                            return [
+                              coin?.barcode,
+                              disc.expected,
+                              disc.actual
+                            ];
+                          });
+
+                          const csvContent = [
+                            headers.join(','),
+                            ...rows.map(row => row.join(','))
+                          ].join('\n');
+
+                          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                          const link = document.createElement('a');
+                          const url = URL.createObjectURL(blob);
+                          link.setAttribute('href', url);
+                          link.setAttribute('download', `stock_take_discrepancies_${new Date(selectedResult.performedAt).toISOString().split('T')[0]}.csv`);
+                          link.style.visibility = 'hidden';
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                      >
+                        Download Discrepancies CSV
+                      </Button>
+                    </HStack>
+                    <Table variant="simple">
                       <Thead>
                         <Tr>
-                          <Th>Coin</Th>
+                          <Th>Barcode</Th>
                           <Th>Expected</Th>
                           <Th>Actual</Th>
-                          <Th>Difference</Th>
                         </Tr>
                       </Thead>
                       <Tbody>
                         {selectedResult.discrepancies.map((disc) => {
-                          const coin = cases
-                            .find(c => c.id === selectedResult.caseId)
-                            ?.coins.find(coin => coin.id === disc.coinId);
+                          const coin = selectedCase?.coins.find(c => c.id === disc.coinId);
                           return (
                             <Tr key={disc.coinId}>
-                              <Td>{coin?.name || 'Unknown'}</Td>
+                              <Td>{coin?.barcode}</Td>
                               <Td>{disc.expected}</Td>
                               <Td>{disc.actual}</Td>
-                              <Td>
-                                <Badge colorScheme={disc.actual < disc.expected ? 'red' : 'yellow'}>
-                                  {disc.actual - disc.expected}
-                                </Badge>
-                              </Td>
                             </Tr>
                           );
                         })}
@@ -434,49 +618,8 @@ const StockTake: React.FC = () => {
               </VStack>
             )}
           </ModalBody>
-          <Box p={4} pt={0}>
-            <Button
-              colorScheme="red"
-              onClick={() => {
-                setSelectedResult(selectedResult);
-                setIsDeleteDialogOpen(true);
-                onClose();
-              }}
-              width="100%"
-            >
-              Delete Result
-            </Button>
-          </Box>
         </ModalContent>
       </Modal>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog
-        isOpen={isDeleteDialogOpen}
-        leastDestructiveRef={cancelRef}
-        onClose={() => setIsDeleteDialogOpen(false)}
-      >
-        <AlertDialogOverlay>
-          <AlertDialogContent>
-            <AlertDialogHeader fontSize="lg" fontWeight="bold">
-              Delete Stock Take Result
-            </AlertDialogHeader>
-
-            <AlertDialogBody>
-              Are you sure you want to delete this stock take result? This action cannot be undone.
-            </AlertDialogBody>
-
-            <AlertDialogFooter>
-              <Button ref={cancelRef} onClick={() => setIsDeleteDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button colorScheme="red" onClick={handleDeleteResult} ml={3}>
-                Delete
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialogOverlay>
-      </AlertDialog>
     </Box>
   );
 };

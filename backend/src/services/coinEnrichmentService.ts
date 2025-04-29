@@ -9,7 +9,12 @@ export async function enrichCoin(barcode: string): Promise<{
   const coinData = findCoinByBarcode(barcode);
   
   if (!coinData) {
-    throw new Error('Coin not found in database');
+    // Return default values for coins not found in the database
+    return {
+      coinId: '', // Empty string for unknown coins
+      description: 'Unknown Coin',
+      grade: '' // Empty string for unknown grade
+    };
   }
 
   return {
