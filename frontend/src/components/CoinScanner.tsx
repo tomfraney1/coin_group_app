@@ -34,7 +34,7 @@ import {
   AlertDialogContent,
   AlertDialogOverlay,
 } from '@chakra-ui/react';
-import { AttachmentIcon, ChevronUpIcon, ChevronDownIcon, DeleteIcon } from '@chakra-ui/icons';
+import { AttachmentIcon, ChevronUpIcon, ChevronDownIcon, DeleteIcon, DownloadIcon } from '@chakra-ui/icons';
 import { CoinData, SortField, SortOrder, FilterOptions } from '../types/coin';
 import { loadCsvData, enrichCoin } from '../utils/coinEnrichment';
 import { productHierarchyService } from '../services/productHierarchy';
@@ -279,6 +279,94 @@ const CoinScanner: React.FC = () => {
     });
   };
 
+  const exportToCSV = () => {
+    if (coins.length === 0) {
+      toast({
+        title: 'No coins to export',
+        description: 'Please scan some coins first',
+        status: 'warning',
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    // Create CSV headers
+    const headers = [
+      'Barcode',
+      'Coin ID',
+      'Description',
+      'Grade',
+      'Quantity',
+      'Certification Number',
+      'Grading Service',
+      'Type',
+      'Year',
+      'Denomination',
+      'Mintage',
+      'Mint Location',
+      'Metal Content',
+      'Diameter',
+      'Weight',
+      'Edge',
+      'Price Guide Value',
+      'Population',
+      'Designer',
+      'Varieties',
+      'Status'
+    ];
+
+    // Create CSV rows
+    const rows = coins.map(coin => [
+      coin.barcode,
+      coin.enrichedData?.coinId || '',
+      coin.enrichedData?.description || '',
+      coin.enrichedData?.grade || '',
+      coin.enrichedData?.quantity || '',
+      coin.enrichedData?.certificationNumber || '',
+      coin.enrichedData?.gradingService || '',
+      coin.enrichedData?.type || '',
+      coin.enrichedData?.year || '',
+      coin.enrichedData?.denomination || '',
+      coin.enrichedData?.mintage || '',
+      coin.enrichedData?.mintLocation || '',
+      coin.enrichedData?.metalContent || '',
+      coin.enrichedData?.diameter || '',
+      coin.enrichedData?.weight || '',
+      coin.enrichedData?.edge || '',
+      coin.enrichedData?.priceGuideValue || '',
+      coin.enrichedData?.population || '',
+      coin.enrichedData?.designer || '',
+      coin.enrichedData?.varieties?.join(', ') || '',
+      coin.status
+    ]);
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    // Create and download CSV file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `coin_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: 'Export successful',
+      description: `Exported ${coins.length} coins to CSV`,
+      status: 'success',
+      duration: 3000,
+      isClosable: true,
+    });
+  };
+
   return (
     <Box p={4}>
       <VStack spacing={6} align="stretch">
@@ -286,22 +374,40 @@ const CoinScanner: React.FC = () => {
         <Box p={4} borderWidth="1px" borderRadius="lg" bg={bgColor}>
           <HStack justify="space-between" mb={4}>
             <Text fontSize="lg" fontWeight="bold">Coin Scanner</Text>
-            {coins.length > 0 && (
-              <Button
-                colorScheme="red"
-                variant="outline"
-                leftIcon={<DeleteIcon />}
-                onClick={() => setIsDeleteDialogOpen(true)}
-                _hover={{
-                  bg: 'red.50',
-                  transform: 'translateY(-1px)',
-                  boxShadow: 'md',
-                }}
-                transition="all 0.2s"
-              >
-                Delete All
-              </Button>
-            )}
+            <HStack>
+              {coins.length > 0 && (
+                <>
+                  <Button
+                    colorScheme="green"
+                    variant="outline"
+                    leftIcon={<DownloadIcon />}
+                    onClick={exportToCSV}
+                    _hover={{
+                      bg: 'green.50',
+                      transform: 'translateY(-1px)',
+                      boxShadow: 'md',
+                    }}
+                    transition="all 0.2s"
+                  >
+                    Export CSV
+                  </Button>
+                  <Button
+                    colorScheme="red"
+                    variant="outline"
+                    leftIcon={<DeleteIcon />}
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    _hover={{
+                      bg: 'red.50',
+                      transform: 'translateY(-1px)',
+                      boxShadow: 'md',
+                    }}
+                    transition="all 0.2s"
+                  >
+                    Delete All
+                  </Button>
+                </>
+              )}
+            </HStack>
           </HStack>
           <form onSubmit={handleScan}>
             <VStack spacing={4}>
