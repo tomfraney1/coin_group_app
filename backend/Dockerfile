@@ -9,6 +9,10 @@ RUN npm run build
 # Production stage
 FROM node:18-alpine
 WORKDIR /app
+
+# Install Python and build dependencies
+RUN apk add --no-cache python3 make g++
+
 COPY --from=build /app/dist ./dist
 COPY package*.json ./
 RUN npm install --production

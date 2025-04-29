@@ -101,9 +101,8 @@ export const updateProduct = async (id: number, product: Partial<SpotPriceProduc
   return result.rows[0] || null;
 };
 
-export const deleteProduct = async (id: number): Promise<boolean> => {
-  const result = await pool.query('DELETE FROM spot_price_products WHERE id = $1', [id]);
-  return result.rowCount > 0;
+export const deleteProduct = async (id: number): Promise<void> => {
+  await pool.query('DELETE FROM spot_price_products WHERE id = $1', [id]);
 };
 
 export const getProductsByCoinId = async (coinId: string): Promise<SpotPriceProduct[]> => {

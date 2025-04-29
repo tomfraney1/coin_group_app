@@ -13,7 +13,18 @@ class SpotPriceService {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = `${API_URL}/api/spot-price`;
+    this.baseUrl = `${API_URL}/spot-price`;
+  }
+
+  private transformProduct(product: any): SpotPriceProduct {
+    return {
+      id: product.id,
+      coinId: product.coin_id,
+      metal: product.metal,
+      ounces: product.ounces,
+      amount: product.amount,
+      type: product.type
+    };
   }
 
   async getAllProducts(type?: 'fixed' | 'percentage'): Promise<SpotPriceProduct[]> {
@@ -27,7 +38,8 @@ class SpotPriceService {
     if (!response.ok) {
       throw new Error('Failed to fetch products');
     }
-    return response.json();
+    const products = await response.json();
+    return products.map(this.transformProduct);
   }
 
   async getProductById(id: number): Promise<SpotPriceProduct> {
@@ -39,7 +51,8 @@ class SpotPriceService {
     if (!response.ok) {
       throw new Error('Failed to fetch product');
     }
-    return response.json();
+    const product = await response.json();
+    return this.transformProduct(product);
   }
 
   async createProduct(product: Omit<SpotPriceProduct, 'id'>): Promise<SpotPriceProduct> {
@@ -49,12 +62,19 @@ class SpotPriceService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
       },
-      body: JSON.stringify(product),
+      body: JSON.stringify({
+        coin_id: product.coinId,
+        metal: product.metal,
+        ounces: product.ounces,
+        amount: product.amount,
+        type: product.type
+      }),
     });
     if (!response.ok) {
       throw new Error('Failed to create product');
     }
-    return response.json();
+    const createdProduct = await response.json();
+    return this.transformProduct(createdProduct);
   }
 
   async updateProduct(id: number, product: Partial<SpotPriceProduct>): Promise<SpotPriceProduct> {
@@ -64,12 +84,19 @@ class SpotPriceService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
       },
-      body: JSON.stringify(product),
+      body: JSON.stringify({
+        coin_id: product.coinId,
+        metal: product.metal,
+        ounces: product.ounces,
+        amount: product.amount,
+        type: product.type
+      }),
     });
     if (!response.ok) {
       throw new Error('Failed to update product');
     }
-    return response.json();
+    const updatedProduct = await response.json();
+    return this.transformProduct(updatedProduct);
   }
 
   async deleteProduct(id: number): Promise<void> {
@@ -94,7 +121,8 @@ class SpotPriceService {
     if (!response.ok) {
       throw new Error('Failed to fetch products');
     }
-    return response.json();
+    const products = await response.json();
+    return products.map(this.transformProduct);
   }
 
   async getProductsByMetal(metal: 'Gold' | 'Silver'): Promise<SpotPriceProduct[]> {
@@ -106,7 +134,8 @@ class SpotPriceService {
     if (!response.ok) {
       throw new Error('Failed to fetch products');
     }
-    return response.json();
+    const products = await response.json();
+    return products.map(this.transformProduct);
   }
 
   async getProductsByTypeAndMetal(type: 'fixed' | 'percentage', metal: 'Gold' | 'Silver'): Promise<SpotPriceProduct[]> {
@@ -118,7 +147,8 @@ class SpotPriceService {
     if (!response.ok) {
       throw new Error('Failed to fetch products');
     }
-    return response.json();
+    const products = await response.json();
+    return products.map(this.transformProduct);
   }
 }
 

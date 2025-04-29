@@ -1,0 +1,107 @@
+# Spot Price Calculator Technical Specification
+
+## Overview
+The Spot Price Calculator is a feature that calculates the spot price of coins based on their metal content and current market prices. The calculator implements a "fixed dollar over spot" pricing model, which adds a fixed premium to the current spot price of the metal.
+
+## Core Components
+
+### 1. Data Model
+- Coin Data Structure:
+  - Basic Information:
+    - ID
+    - Barcode
+    - Name
+    - Quantity
+  - Enriched Data:
+    - Metal Content
+    - Weight
+    - Grade
+    - Description
+    - Price Guide Value
+    - Certification Number
+
+### 2. Price Calculation Logic
+- Input Parameters:
+  - Coin's metal content (e.g., gold, silver)
+  - Coin's weight
+  - Current spot price of metal
+  - Fixed premium amount
+
+- Calculation Formula:
+  Spot Price = (Metal Weight × Current Spot Price) + Fixed Premium
+
+### 3. Integration Points
+- PCGS API Integration:
+  - Fetches coin metadata including metal content and weight
+  - Retrieves current market data
+  - Updates price guide values
+
+- Product Database:
+  - Stores coin specifications
+  - Maintains pricing history
+  - Tracks certification numbers
+
+## Technical Implementation
+
+### 1. Frontend Components
+- CoinScanner Component:
+  - Handles coin scanning and data input
+  - Displays calculated spot prices
+  - Manages quantity adjustments
+
+- Product Hierarchy Service:
+  - Organizes coins by metal type
+  - Maintains pricing structure
+  - Handles updates to spot prices
+
+### 2. Backend Services
+- Coin Location Service:
+  - Tracks coin inventory
+  - Manages location-based pricing
+  - Handles price updates
+
+- CSV Parser:
+  - Processes coin data from CSV files
+  - Updates spot price calculations
+  - Maintains data consistency
+
+## Features
+
+### 1. Real-time Price Updates
+- Automatic spot price fetching
+- Price recalculation on metal price changes
+- Historical price tracking
+
+### 2. Quantity Management
+- Bulk price calculations
+- Quantity-based premium adjustments
+- Inventory tracking
+
+### 3. Reporting
+- Price history export
+- Spot price trends
+- Premium analysis
+
+## Error Handling
+- Invalid metal content detection
+- Missing weight data handling
+- API failure recovery
+- Data validation
+
+## Security Considerations
+- API key management
+- Data validation
+- Access control
+- Audit logging
+
+## Performance Considerations
+- Caching of spot prices
+- Batch processing for bulk calculations
+- Optimized database queries
+- Efficient data structures
+
+## Future Enhancements
+- Multiple metal support
+- Dynamic premium calculations
+- Advanced reporting features
+- Integration with additional pricing sources 

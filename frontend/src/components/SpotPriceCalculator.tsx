@@ -30,8 +30,9 @@ import {
   ModalBody,
   ModalCloseButton,
   useDisclosure,
+  IconButton,
 } from '@chakra-ui/react';
-import { AddIcon, DeleteIcon } from '@chakra-ui/icons';
+import { AddIcon, DeleteIcon, CheckIcon, CloseIcon, EditIcon } from '@chakra-ui/icons';
 import { spotPriceService, SpotPriceProduct } from '../services/spotPriceService';
 
 const SpotPriceCalculator: React.FC = () => {
@@ -45,6 +46,7 @@ const SpotPriceCalculator: React.FC = () => {
     type: 'fixed',
   });
   const [tableType, setTableType] = useState<'fixed' | 'percentage'>('fixed');
+  const [editingProduct, setEditingProduct] = useState<{ id: number; amount: string } | null>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
 
@@ -133,6 +135,68 @@ const SpotPriceCalculator: React.FC = () => {
     }
   };
 
+  const handleStartEdit = (product: SpotPriceProduct) => {
+    setEditingProduct({ id: product.id!, amount: product.amount.toString() });
+  };
+
+  const handleAmountChange = (value: string) => {
+    if (editingProduct) {
+      setEditingProduct({ ...editingProduct, amount: value });
+    }
+  };
+
+  const handleSaveAmount = async () => {
+    if (!editingProduct) return;
+
+    try {
+      const amount = parseFloat(editingProduct.amount);
+      if (isNaN(amount)) {
+        toast({
+          title: 'Invalid amount',
+          description: 'Please enter a valid number',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+
+      const updatedProduct = await spotPriceService.updateProduct(editingProduct.id, {
+        amount: amount
+      });
+
+      if (tableType === 'fixed') {
+        setFixedDollarProducts(fixedDollarProducts.map(p => 
+          p.id === editingProduct.id ? updatedProduct : p
+        ));
+      } else {
+        setPercentageProducts(percentageProducts.map(p => 
+          p.id === editingProduct.id ? updatedProduct : p
+        ));
+      }
+
+      setEditingProduct(null);
+      toast({
+        title: 'Amount updated successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error updating amount',
+        description: 'Failed to update amount on the server',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingProduct(null);
+  };
+
   return (
     <Box>
       <VStack spacing={6} align="stretch">
@@ -189,7 +253,47 @@ const SpotPriceCalculator: React.FC = () => {
                   <Td>{product.coinId}</Td>
                   <Td>{product.metal}</Td>
                   <Td>{product.ounces}</Td>
-                  <Td>{product.amount}</Td>
+                  <Td>
+                    {editingProduct?.id === product.id ? (
+                      <HStack spacing={2}>
+                        <Input
+                          value={editingProduct.amount}
+                          onChange={(e) => handleAmountChange(e.target.value)}
+                          size="sm"
+                          width="100px"
+                        />
+                        <IconButton
+                          aria-label="Save amount"
+                          icon={<CheckIcon />}
+                          colorScheme="green"
+                          size="sm"
+                          onClick={handleSaveAmount}
+                        />
+                        <IconButton
+                          aria-label="Cancel edit"
+                          icon={<CloseIcon />}
+                          colorScheme="red"
+                          size="sm"
+                          onClick={handleCancelEdit}
+                        />
+                      </HStack>
+                    ) : (
+                      <HStack spacing={2}>
+                        <Text>
+                          {tableType === 'percentage' 
+                            ? `${product.amount.toFixed(2)}%`
+                            : `$${product.amount.toFixed(2)}`}
+                        </Text>
+                        <IconButton
+                          aria-label="Edit amount"
+                          icon={<EditIcon />}
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleStartEdit(product)}
+                        />
+                      </HStack>
+                    )}
+                  </Td>
                   <Td>
                     <Button
                       leftIcon={<DeleteIcon />}
@@ -253,8 +357,8 @@ const SpotPriceCalculator: React.FC = () => {
                   value={newProduct.amount}
                   onChange={(_, value) => setNewProduct({ ...newProduct, amount: value })}
                   min={0}
-                  step={0.01}
                   precision={2}
+                  step={0.01}
                 >
                   <NumberInputField />
                   <NumberInputStepper>

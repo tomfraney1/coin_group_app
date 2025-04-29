@@ -41,14 +41,14 @@ router.post('/', authenticateToken, async (req, res) => {
 // Update product
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    const [updatedCount, updatedProducts] = await spotPriceService.updateProduct(
+    const result = await spotPriceService.updateProduct(
       parseInt(req.params.id),
       req.body
     );
-    if (updatedCount === 0) {
+    if (!result) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    res.json(updatedProducts[0]);
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update product' });
   }
@@ -57,10 +57,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 // Delete product
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const deletedCount = await spotPriceService.deleteProduct(parseInt(req.params.id));
-    if (deletedCount === 0) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
+    await spotPriceService.deleteProduct(parseInt(req.params.id));
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete product' });

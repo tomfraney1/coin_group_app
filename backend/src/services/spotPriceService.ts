@@ -27,8 +27,8 @@ export class SpotPriceService {
     return updateProduct(id, product);
   }
 
-  async deleteProduct(id: number): Promise<boolean> {
-    return deleteProduct(id);
+  async deleteProduct(id: number): Promise<void> {
+    await deleteProduct(id);
   }
 
   async getProductsByCoinId(coinId: string): Promise<SpotPriceProduct[]> {

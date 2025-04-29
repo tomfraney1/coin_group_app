@@ -9,6 +9,7 @@ import publicRoutes from './routes/publicRoutes';
 import CaseNotificationService from './websocket/caseNotifications';
 import { connectDB } from './config/database';
 import stockTakeRoutes from './routes/stockTakeRoutes';
+import spotPriceRoutes from './routes/spotPriceRoutes';
 
 const app = express();
 const port = Number(process.env.PORT) || 8080;
@@ -49,6 +50,7 @@ app.use('/api/coin-locations', coinLocationRoutes);
 app.use('/api/cases', initializeCaseRoutes(caseNotificationService));
 app.use('/api/public', publicRoutes);
 app.use('/api/stock-take', stockTakeRoutes);
+app.use('/api/spot-price', spotPriceRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
