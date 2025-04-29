@@ -21,6 +21,7 @@ class SpotPriceService {
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json',
       },
     });
     if (!response.ok) {
@@ -76,6 +77,7 @@ class SpotPriceService {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json',
       },
     });
     if (!response.ok) {
